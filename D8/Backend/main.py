@@ -1,578 +1,546 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict
-import requests
 import openai
 import os
 from datetime import datetime
+import json
+import requests
 
-app = FastAPI(title="D8 Backend API", version="1.0.0")
+app = FastAPI(title="D8 Backend API", version="2.0.0")
 
-# Configure OpenAI - only set if environment variable exists
+# Configure OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if openai_api_key:
     openai.api_key = openai_api_key
-    print("OpenAI API key loaded from environment")
+    print(f"OpenAI API key loaded from environment (length: {len(openai_api_key)})")
+    print(f"API key starts with: {openai_api_key[:10]}...")
 else:
     print("Warning: No OpenAI API key found in environment variables")
+    print("Available environment variables:")
+    for key in sorted(os.environ.keys()):
+        if 'openai' in key.lower() or 'api' in key.lower():
+            print(f"  {key}: {os.environ[key][:10]}...")
 
-class DateRequest(BaseModel):
-    query: str
-    location: str
+class RestaurantRequest(BaseModel):
     date_type: str
-    meal_times: List[str]
-    price_range: Optional[str] = None
-    cuisines: List[str]
+    meal_times: Optional[List[str]] = None
+    price_range: str
+    cuisines: Optional[List[str]] = None
+    activity_types: Optional[List[str]] = None
+    activity_intensity: Optional[str] = None
     date: str
+    location: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    page: Optional[int] = 1
 
-class PlaceRecommendation(BaseModel):
+class RestaurantRecommendation(BaseModel):
     name: str
     description: str
-    location: dict  # Will contain lat, lon, display_name, place_id, type, importance
-    category: str  # Maps to cuisine
-    estimated_cost: str  # Maps to price_level
-    best_time: str
+    location: str
+    address: str
+    latitude: float
+    longitude: float
+    cuisine_type: str
+    price_level: str
+    is_open: bool
+    open_hours: str
+    pros: List[str]
+    cons: List[str]
+    rating: float
     why_recommended: str
-    ai_confidence: float  # Maps to match_score
+    estimated_cost: str
+    best_time: str
 
-class DateResponse(BaseModel):
-    recommendations: List[PlaceRecommendation]
+class RestaurantResponse(BaseModel):
+    recommendations: List[RestaurantRecommendation]
     total_found: int
     query_used: str
     processing_time: float
 
+def reverse_geocode(latitude: float, longitude: float) -> str:
+    """
+    Convert coordinates to a location name using OpenStreetMap Nominatim API
+    """
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}&zoom=10&addressdetails=1"
+        headers = {
+            'User-Agent': 'D8-Restaurant-App/1.0'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            address = data.get('address', {})
+            
+            # Try to get city and state/country
+            city = address.get('city') or address.get('town') or address.get('village') or address.get('hamlet')
+            state = address.get('state') or address.get('county')
+            country = address.get('country')
+            
+            if city and state:
+                return f"{city}, {state}"
+            elif city and country:
+                return f"{city}, {country}"
+            elif city:
+                return city
+            else:
+                # Fallback to display name
+                return data.get('display_name', 'Unknown Location').split(',')[0]
+        else:
+            print(f"Reverse geocoding failed with status {response.status_code}")
+            return "Unknown Location"
+    except Exception as e:
+        print(f"Reverse geocoding error: {e}")
+        return "Unknown Location"
+
 @app.get("/")
 def root():
-    return {"message": "D8 Backend API is running"}
+    return {"message": "D8 Backend API v2.0 - OpenAI Powered"}
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().timestamp()}
 
-@app.post("/recommendations", response_model=DateResponse)
-async def get_date_recommendations(request: DateRequest):
+@app.post("/recommendations", response_model=RestaurantResponse)
+async def get_restaurant_recommendations(request: RestaurantRequest):
     """
-    Get AI-powered date recommendations based on user preferences
+    Get AI-powered restaurant recommendations using OpenAI
     """
     import time
     start_time = time.time()
     
     try:
-        print(f"Received request: {request}")  # Debug log
+        print(f"Received request: {request}")
         
-        # 1. Search OpenStreetMap for locations
-        print("Starting OSM search...")  # Debug log
-        places = await search_openstreetmap(request)
-        print(f"Found {len(places)} places from OSM")  # Debug log
+        # Check if OpenAI API key is available
+        if not openai_api_key:
+            print("No OpenAI API key available")
+            processing_time = time.time() - start_time
+            
+            query_desc = f"{request.date_type}"
+            if request.date_type == "meal" and request.meal_times:
+                query_desc += f" {request.meal_times[0]}"
+            elif request.date_type == "activity" and request.activity_types:
+                query_desc += f" {request.activity_types[0]}"
+            
+            response = RestaurantResponse(
+                recommendations=[],
+                total_found=0,
+                query_used=f"No API key available for {query_desc}",
+                processing_time=processing_time
+            )
+            return response
         
-        # 2. Use OpenAI to filter and enhance recommendations
-        print("Starting AI filtering...")  # Debug log
-        recommendations = await filter_with_ai(places, request)
-        print(f"AI filtering complete, {len(recommendations)} recommendations")  # Debug log
+        # Create natural language prompt
+        prompt = create_restaurant_prompt(request)
+        print(f"Generated prompt: {prompt[:200]}...")
         
-        # Use the query from the request
-        query_used = request.query
+        # Try to get recommendations from OpenAI
+        try:
+            all_recommendations = await get_openai_recommendations(prompt, request)
+        except Exception as e:
+            print(f"OpenAI failed: {e}")
+            processing_time = time.time() - start_time
+            
+            # Return empty results with error information
+            response = RestaurantResponse(
+                recommendations=[],
+                total_found=0,
+                query_used=f"OpenAI API error: {str(e)}",
+                processing_time=processing_time
+            )
+            return response
+        
+        # Apply pagination
+        page = request.page or 1
+        items_per_page = 10
+        start_index = (page - 1) * items_per_page
+        end_index = start_index + items_per_page
+        
+        recommendations = all_recommendations[start_index:end_index]
         
         processing_time = time.time() - start_time
         
-        response = DateResponse(
+        query_desc = f"{request.date_type}"
+        if request.date_type == "meal" and request.meal_times:
+            query_desc += f" {request.meal_times[0]}"
+        elif request.date_type == "activity" and request.activity_types:
+            query_desc += f" {request.activity_types[0]}"
+        
+        response = RestaurantResponse(
             recommendations=recommendations,
-            total_found=len(recommendations),
-            query_used=query_used,
+            total_found=len(all_recommendations),
+            query_used=f"OpenAI-powered recommendations for {query_desc} (page {page})",
             processing_time=processing_time
         )
         
-        print(f"Returning response: {response}")  # Debug log
+        print(f"Returning {len(recommendations)} recommendations")
         return response
         
     except Exception as e:
-        print(f"Error in get_date_recommendations: {e}")  # Debug log
+        print(f"Error in get_restaurant_recommendations: {e}")
         import traceback
-        traceback.print_exc()  # Print full stack trace
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-async def search_openstreetmap(request: DateRequest):
+def create_restaurant_prompt(request: RestaurantRequest) -> str:
     """
-    Search OpenStreetMap for places based on location and criteria
+    Create a natural language prompt for restaurant or activity recommendations
     """
+    # Format the date
     try:
-        # Get coordinates for the location
-        lat, lon = await get_coordinates(request.location, request.latitude, request.longitude)
-        
-        # Search OpenStreetMap using Overpass API
-        places = await search_osm_places(lat, lon, request)
-        
-        # If no results, try a broader search
-        if not places:
-            places = await search_osm_places_broad(lat, lon, request)
-        
-        # If still no results, use fallback data
-        if not places:
-            places = generate_fallback_places(lat, lon, request)
-        
-        return places
-        
-    except Exception as e:
-        print(f"Error searching OpenStreetMap: {e}")
-        # Return fallback data on error
-        lat = request.latitude or 37.7749  # Default to San Francisco
-        lon = request.longitude or -122.4194
-        return generate_fallback_places(lat, lon, request)
+        date_obj = datetime.strptime(request.date, "%Y-%m-%d")
+        formatted_date = date_obj.strftime("%A, %B %d, %Y")
+    except:
+        formatted_date = request.date
+    
+    # Get actual location name from coordinates
+    actual_location = request.location
+    if request.latitude and request.longitude and request.location == "Current Location":
+        actual_location = reverse_geocode(request.latitude, request.longitude)
+        print(f"Converted coordinates ({request.latitude}, {request.longitude}) to location: {actual_location}")
+    
+    if request.date_type == "activity":
+        return create_activity_prompt(request, actual_location, formatted_date)
+    else:
+        return create_meal_prompt(request, actual_location, formatted_date)
 
-async def filter_with_ai(places: List[dict], request: DateRequest):
+def create_meal_prompt(request: RestaurantRequest, actual_location: str, formatted_date: str) -> str:
     """
-    Use OpenAI to filter and enhance the place recommendations
+    Create a prompt for restaurant recommendations with enhanced context
     """
-    if not places:
-        return []
+    # Format meal times
+    meal_times_str = ", ".join(request.meal_times) if request.meal_times else "any time"
     
-    # Create a prompt for OpenAI to analyze and score the places
-    prompt = f"""
-    You are a date recommendation expert. Analyze these restaurants and rank them for a date based on these criteria:
+    # Format cuisines
+    cuisines_str = ", ".join(request.cuisines) if request.cuisines else "any cuisine"
     
-    Date Type: {request.date_type}
-    Meal Times: {', '.join(request.meal_times)}
-    Price Range: {request.price_range or 'Any'}
-    Cuisines: {', '.join(request.cuisines)}
-    Date: {request.date}
+    # Format price range
+    price_descriptions = {
+        "low": "budget-friendly (under $15 per person)",
+        "medium": "moderate pricing ($15-30 per person)", 
+        "high": "upscale ($30-60 per person)",
+        "luxury": "fine dining ($60+ per person)"
+    }
+    price_desc = price_descriptions.get(request.price_range, "any price range")
     
-    For each restaurant, consider:
-    1. How well it matches the cuisine preferences
-    2. How appropriate it is for the meal time(s)
-    3. How well it fits the price range
-    4. How romantic/date-appropriate the atmosphere is
-    5. Overall quality and reputation
-    
-    Rate each place from 0.0 to 1.0 and provide a brief enhanced description.
-    
-    Restaurants to analyze:
-    """
-    
-    for i, place in enumerate(places):
-        prompt += f"\n{i+1}. {place['name']} - {place['cuisine']} - {place['price_level']} - {place.get('description', 'No description')}"
-    
-    prompt += "\n\nReturn your analysis in this exact JSON format:\n"
-    prompt += '{"recommendations": [{"name": "Restaurant Name", "match_score": 0.85, "enhanced_description": "Your enhanced description here"}]}'
-    
+    # Get day of week for context
     try:
-        # Check if OpenAI API key is available
-        if not openai_api_key:
-            print("No OpenAI API key available, skipping AI filtering")
-            ai_scores = {}
-            ai_descriptions = {}
+        date_obj = datetime.strptime(request.date, "%Y-%m-%d")
+        day_of_week = date_obj.strftime("%A")
+        is_weekend = date_obj.weekday() >= 5
+    except:
+        day_of_week = "unknown"
+        is_weekend = False
+    
+    # Determine date context
+    date_context = ""
+    if is_weekend:
+        date_context = "This is a weekend date, so consider restaurants that are popular for weekend dining and may have special brunch or dinner menus."
+    else:
+        date_context = "This is a weekday date, so consider restaurants that offer good value and aren't overly crowded."
+    
+    prompt = f"""
+You are an expert restaurant recommendation specialist with deep knowledge of dining scenes across major cities. You understand the nuances of what makes a perfect date restaurant, considering atmosphere, service, food quality, and romantic appeal.
+
+CONTEXT & REQUIREMENTS:
+- Date: {formatted_date} ({day_of_week})
+- Location: {actual_location}
+- Date Type: {request.date_type}
+- Meal Time: {meal_times_str}
+- Price Range: {price_desc}
+- Cuisine Preferences: {cuisines_str}
+
+{date_context}
+
+RECOMMENDATION CRITERIA:
+For this {request.date_type} date, prioritize restaurants that excel in:
+
+1. ATMOSPHERE & AMBIANCE:
+   - Romantic lighting and intimate seating
+   - Appropriate noise level for conversation
+   - Clean, well-maintained interior
+   - Good spacing between tables for privacy
+
+2. FOOD QUALITY & EXPERIENCE:
+   - Fresh, high-quality ingredients
+   - Well-executed dishes that match the cuisine type
+   - Appropriate portion sizes for the meal time
+   - Menu variety that accommodates different preferences
+
+3. SERVICE & TIMING:
+   - Attentive but not intrusive service
+   - Reasonable wait times for the requested meal time
+   - Staff knowledgeable about the menu
+   - Good pacing of courses
+
+4. LOCATION & ACCESSIBILITY:
+   - Safe, well-lit area
+   - Easy to find and access
+   - Parking or public transportation nearby
+   - Good neighborhood reputation
+
+5. VALUE & PRICING:
+   - Fair pricing for the quality and experience
+   - Good value within the specified price range
+   - Transparent pricing with no hidden fees
+
+SPECIFIC INSTRUCTIONS:
+- Recommend 6-8 restaurants that are real, well-established establishments
+- Focus on restaurants that are actually open on {formatted_date} for {meal_times_str}
+- Prioritize restaurants with consistent quality and good reputations
+- Include a mix of well-known spots and hidden gems
+- Consider the specific meal time (breakfast = casual, lunch = business-friendly, dinner = romantic)
+- Ensure variety in cuisine types while respecting preferences
+- Include restaurants that locals would recommend to friends
+
+For each restaurant, provide detailed, specific information that helps the user make an informed decision.
+
+Return your response as a JSON array with this exact structure:
+[
+  {{
+    "name": "Restaurant Name",
+    "description": "Detailed 2-3 sentence description highlighting what makes this restaurant special for dates",
+    "location": "Specific neighborhood, City",
+    "address": "Full street address with city and state",
+    "latitude": 40.7128,
+    "longitude": -74.0060,
+    "cuisine_type": "Specific cuisine type",
+    "price_level": "low/medium/high/luxury",
+    "is_open": true/false,
+    "open_hours": "Specific hours of operation",
+    "pros": ["Specific pro 1", "Specific pro 2", "Specific pro 3", "Specific pro 4"],
+    "cons": ["Honest con 1", "Honest con 2"],
+    "rating": 4.5,
+    "why_recommended": "Detailed explanation of why this restaurant is perfect for this specific date occasion",
+    "estimated_cost": "Specific cost range per person",
+    "best_time": "Optimal time to visit for this meal time"
+  }}
+]
+
+IMPORTANT: Only recommend real, well-known restaurants that actually exist in {actual_location} or nearby areas. Do not make up restaurants or provide generic recommendations.
+"""
+    
+    return prompt
+
+def create_activity_prompt(request: RestaurantRequest, actual_location: str, formatted_date: str) -> str:
+    """
+    Create a prompt for activity recommendations with enhanced context
+    """
+    # Format activity types
+    activity_types_str = ", ".join(request.activity_types) if request.activity_types else "any activity type"
+    
+    # Format activity intensity
+    intensity_descriptions = {
+        "low": "relaxed, easy activities",
+        "medium": "moderate effort activities", 
+        "high": "high energy, intense activities",
+        "not_sure": "any intensity level"
+    }
+    intensity_desc = intensity_descriptions.get(request.activity_intensity, "any intensity level")
+    
+    # Format price range
+    price_descriptions = {
+        "low": "budget-friendly (under $20 per person)",
+        "medium": "moderate pricing ($20-50 per person)", 
+        "high": "upscale ($50-100 per person)",
+        "luxury": "premium ($100+ per person)"
+    }
+    price_desc = price_descriptions.get(request.price_range, "any price range")
+    
+    # Get day of week for context
+    try:
+        date_obj = datetime.strptime(request.date, "%Y-%m-%d")
+        day_of_week = date_obj.strftime("%A")
+        is_weekend = date_obj.weekday() >= 5
+    except:
+        day_of_week = "unknown"
+        is_weekend = False
+    
+    # Determine date context
+    date_context = ""
+    if is_weekend:
+        date_context = "This is a weekend date, so consider activities that are popular for weekend outings and may have special weekend hours or events."
+    else:
+        date_context = "This is a weekday date, so consider activities that are available during weekdays and may offer better value or less crowds."
+    
+    prompt = f"""
+You are an expert activity recommendation specialist with deep knowledge of entertainment, recreation, and date-worthy activities across major cities. You understand what makes activities perfect for dates, considering engagement, conversation opportunities, and shared experiences.
+
+CONTEXT & REQUIREMENTS:
+- Date: {formatted_date} ({day_of_week})
+- Location: {actual_location}
+- Date Type: {request.date_type}
+- Activity Types: {activity_types_str}
+- Activity Intensity: {intensity_desc}
+- Price Range: {price_desc}
+
+{date_context}
+
+RECOMMENDATION CRITERIA:
+For this {request.date_type} date, prioritize activities that excel in:
+
+1. ENGAGEMENT & INTERACTION:
+   - Activities that encourage conversation and connection
+   - Shared experiences that create memories
+   - Interactive elements that both people can enjoy
+   - Appropriate challenge level for both participants
+
+2. ATMOSPHERE & SETTING:
+   - Clean, well-maintained facilities
+   - Good lighting and comfortable environment
+   - Appropriate noise level for conversation
+   - Safe and welcoming atmosphere
+
+3. TIMING & AVAILABILITY:
+   - Activities available on {formatted_date}
+   - Appropriate duration (not too short, not too long)
+   - Good timing for the requested activity types
+   - Flexible scheduling options
+
+4. VALUE & PRICING:
+   - Fair pricing for the experience provided
+   - Good value within the specified price range
+   - Transparent pricing with no hidden fees
+   - Worth the investment for a date experience
+
+5. LOCATION & ACCESSIBILITY:
+   - Safe, well-lit area
+   - Easy to find and access
+   - Parking or public transportation nearby
+   - Good neighborhood reputation
+
+SPECIFIC INSTRUCTIONS:
+- Recommend 6-8 activities that are real, well-established venues or experiences
+- Focus on activities that are actually available on {formatted_date}
+- Prioritize activities with consistent quality and good reputations
+- Include a mix of popular spots and hidden gems
+- Consider the specific activity intensity and types requested
+- Ensure variety while respecting preferences
+- Include activities that locals would recommend to friends
+- Consider weather-appropriate activities for the location and season
+
+For each activity, provide detailed, specific information that helps the user make an informed decision.
+
+Return your response as a JSON array with this exact structure:
+[
+  {{
+    "name": "Activity Name",
+    "description": "Detailed 2-3 sentence description highlighting what makes this activity special for dates",
+    "location": "Specific neighborhood, City",
+    "address": "Full street address with city and state",
+    "latitude": 40.7128,
+    "longitude": -74.0060,
+    "cuisine_type": "Activity type (sports/outdoor/indoor/entertainment/fitness)",
+    "price_level": "low/medium/high/luxury",
+    "is_open": true/false,
+    "open_hours": "Specific hours of operation",
+    "pros": ["Specific pro 1", "Specific pro 2", "Specific pro 3", "Specific pro 4"],
+    "cons": ["Honest con 1", "Honest con 2"],
+    "rating": 4.5,
+    "why_recommended": "Detailed explanation of why this activity is perfect for this specific date occasion",
+    "estimated_cost": "Specific cost range per person",
+    "best_time": "Optimal time to visit for this activity"
+  }}
+]
+
+IMPORTANT: Only recommend real, well-known activities and venues that actually exist in {actual_location} or nearby areas. Do not make up activities or provide generic recommendations.
+"""
+    
+    return prompt
+
+async def get_openai_recommendations(prompt: str, request: RestaurantRequest) -> List[RestaurantRecommendation]:
+    """
+    Get restaurant recommendations from OpenAI
+    """
+    try:
+        print(f"Creating OpenAI client with API key: {openai_api_key[:10] if openai_api_key else 'None'}...")
+        client = openai.OpenAI(api_key=openai_api_key)
+        
+        print("Making OpenAI API call...")
+        system_message = """You are an expert restaurant recommendation specialist with extensive knowledge of dining scenes across major cities. You understand what makes restaurants perfect for dates, considering atmosphere, food quality, service, and romantic appeal. Always respond with valid JSON arrays containing detailed restaurant recommendations. Be specific about real, well-known restaurants and their actual details. Focus on establishments that locals would genuinely recommend to friends for special occasions."""
+        if request.date_type == "activity":
+            system_message = """You are an expert activity recommendation specialist with extensive knowledge of entertainment, recreation, and date-worthy activities across major cities. You understand what makes activities perfect for dates, considering engagement, conversation opportunities, and shared experiences. Always respond with valid JSON arrays containing detailed activity recommendations. Be specific about real, well-known venues and activities and their actual details. Focus on experiences that locals would genuinely recommend to friends for special occasions."""
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": system_message
+                },
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2000,
+            temperature=0.7
+        )
+        print("OpenAI API call successful!")
+        
+        # Parse the AI response
+        ai_response = response.choices[0].message.content.strip()
+        print(f"OpenAI response: {ai_response[:200]}...")
+        
+        # Extract JSON from the response
+        import re
+        json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
+        if json_match:
+            restaurants_data = json.loads(json_match.group())
         else:
-            # Use OpenAI to analyze and score the places
-            client = openai.OpenAI()
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that analyzes restaurants for date recommendations. Always respond with valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=2000,
-                temperature=0.7
-            )
-            
-            # Parse the AI response
-            ai_response = response.choices[0].message.content.strip()
-            print(f"OpenAI response: {ai_response}")  # Debug log
-            
-            # Extract JSON from the response (in case there's extra text)
-            import json
-            import re
-            
-            # Find JSON in the response
+            # Try to find any JSON array in the response
             json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
             if json_match:
-                ai_data = json.loads(json_match.group())
-                ai_recommendations = ai_data.get('recommendations', [])
-                print(f"Parsed AI recommendations: {len(ai_recommendations)}")  # Debug log
+                restaurants_data = [json.loads(json_match.group())]
             else:
-                print("No JSON found in AI response")  # Debug log
-                ai_recommendations = []
-            
-            # Create a mapping of names to AI scores
-            ai_scores = {rec['name']: rec.get('match_score', 0.5) for rec in ai_recommendations}
-            ai_descriptions = {rec['name']: rec.get('enhanced_description', '') for rec in ai_recommendations}
+                raise Exception("No valid JSON found in OpenAI response")
+        
+        # Convert to our model
+        recommendations = []
+        for restaurant_data in restaurants_data:
+            try:
+                recommendation = RestaurantRecommendation(
+                    name=restaurant_data.get("name", "Unknown Restaurant"),
+                    description=restaurant_data.get("description", ""),
+                    location=restaurant_data.get("location", ""),
+                    address=restaurant_data.get("address", ""),
+                    latitude=restaurant_data.get("latitude", 0.0),
+                    longitude=restaurant_data.get("longitude", 0.0),
+                    cuisine_type=restaurant_data.get("cuisine_type", ""),
+                    price_level=restaurant_data.get("price_level", "medium"),
+                    is_open=restaurant_data.get("is_open", True),
+                    open_hours=restaurant_data.get("open_hours", ""),
+                    pros=restaurant_data.get("pros", []),
+                    cons=restaurant_data.get("cons", []),
+                    rating=restaurant_data.get("rating", 4.0),
+                    why_recommended=restaurant_data.get("why_recommended", ""),
+                    estimated_cost=restaurant_data.get("estimated_cost", ""),
+                    best_time=restaurant_data.get("best_time", "")
+                )
+                recommendations.append(recommendation)
+            except Exception as e:
+                print(f"Error parsing restaurant data: {e}")
+                continue
+        
+        return recommendations
         
     except Exception as e:
         print(f"OpenAI error: {e}")
-        # Fallback to basic scoring if OpenAI fails
-        ai_scores = {}
-        ai_descriptions = {}
-    
-    # Create the final recommendations with AI enhancement
-    recommendations = []
-    for place in places:
-        # Get AI score or calculate basic score
-        ai_score = ai_scores.get(place['name'], 0.5)
-        enhanced_description = ai_descriptions.get(place['name'], place.get('description', ''))
-        
-        # Basic scoring based on preferences
-        basic_score = 0.3  # Start lower for better differentiation
-        
-        # Cuisine match (most important)
-        if request.cuisines and place['cuisine'] in [c.lower() for c in request.cuisines]:
-            basic_score += 0.4
-        elif request.cuisines and place['cuisine'] != 'various':
-            # Partial match for different cuisines
-            basic_score += 0.1
-        
-        # Price range match
-        if request.price_range:
-            price_match = {
-                'low': ['low'],
-                'medium': ['medium'],
-                'high': ['high'],
-                'luxury': ['luxury']
-            }
-            if place['price_level'] in price_match.get(request.price_range, []):
-                basic_score += 0.2
-        
-        # Restaurant type bonus
-        if place.get('amenity') == 'restaurant':
-            basic_score += 0.1
-        elif place.get('amenity') in ['cafe', 'bistro']:
-            basic_score += 0.05
-        
-        # Combine AI and basic scores (use more basic scoring if AI failed)
-        if ai_scores:
-            final_score = (ai_score * 0.7) + (basic_score * 0.3)
+        # Provide more specific error messages
+        error_msg = str(e)
+        if "model" in error_msg.lower() and "not found" in error_msg.lower():
+            raise Exception("OpenAI model not available. Please check your API key and model access.")
+        elif "quota" in error_msg.lower():
+            raise Exception("OpenAI API quota exceeded. Please check your billing.")
+        elif "api key" in error_msg.lower():
+            raise Exception("OpenAI API key not configured properly.")
         else:
-            final_score = basic_score
-        
-        # Create location object for iOS compatibility
-        location_obj = {
-            "name": place['name'],
-            "display_name": place['address'],
-            "lat": place['latitude'],
-            "lon": place['longitude'],
-            "place_id": hash(place['name'] + str(place['latitude']) + str(place['longitude'])),
-            "type": place.get('amenity', 'restaurant'),
-            "importance": min(final_score, 1.0)
-        }
-        
-        # Determine best time based on meal times
-        best_time = "Anytime"
-        if request.meal_times:
-            if "breakfast" in request.meal_times:
-                best_time = "Morning (8AM-11AM)"
-            elif "lunch" in request.meal_times:
-                best_time = "Afternoon (12PM-3PM)"
-            elif "dinner" in request.meal_times:
-                best_time = "Evening (6PM-10PM)"
-        
-        # Create better why_recommended text
-        why_recommended = f"Great for {request.date_type}"
-        if place['cuisine'] != 'various':
-            why_recommended += f" with {place['cuisine']} cuisine"
-        if place.get('amenity') == 'restaurant':
-            why_recommended += " in a restaurant setting"
-        elif place.get('amenity') in ['cafe', 'bistro']:
-            why_recommended += f" in a cozy {place.get('amenity')} atmosphere"
-        
-        recommendation = PlaceRecommendation(
-            name=place['name'],
-            description=enhanced_description or place.get('description', ''),
-            location=location_obj,
-            category=place['cuisine'],
-            estimated_cost=place['price_level'],
-            best_time=best_time,
-            why_recommended=why_recommended,
-            ai_confidence=min(final_score, 1.0)
-        )
-        recommendations.append(recommendation)
-    
-    # Sort by AI confidence and limit to 10
-    recommendations.sort(key=lambda x: x.ai_confidence, reverse=True)
-    return recommendations[:10]
-
-# Helper functions for OpenStreetMap integration
-async def get_coordinates(location: str, lat: Optional[float], lon: Optional[float]):
-    """Get coordinates from location string or use provided coordinates"""
-    if lat is not None and lon is not None:
-        return lat, lon
-    
-    # Geocode the location using Nominatim
-    try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            url = f"https://nominatim.openstreetmap.org/search?q={location}&format=json&limit=1"
-            headers = {"User-Agent": "D8-Backend/1.0"}
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data:
-                        return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception as e:
-        print(f"Geocoding error: {e}")
-    
-    # Fallback to San Francisco coordinates
-    return 37.7749, -122.4194
-
-async def search_osm_places(lat: float, lon: float, request: DateRequest):
-    """Search OpenStreetMap for places using Overpass API"""
-    try:
-        import aiohttp
-        import json
-        
-        # Build cuisine filter
-        cuisine_filter = ""
-        if request.cuisines:
-            cuisine_list = [f'"{c.lower()}"' for c in request.cuisines]
-            cuisine_filter = f'["cuisine"~"{"|".join(cuisine_list)}",i]'
-        
-        # Overpass query for restaurants and cafes - prioritize restaurants
-        query = f"""
-        [out:json][timeout:25];
-        (
-          node["amenity"="restaurant"]{cuisine_filter}(around:1000,{lat},{lon});
-          way["amenity"="restaurant"]{cuisine_filter}(around:1000,{lat},{lon});
-          relation["amenity"="restaurant"]{cuisine_filter}(around:1000,{lat},{lon});
-          node["amenity"~"cafe|bar|bistro"]{cuisine_filter}(around:1000,{lat},{lon});
-          way["amenity"~"cafe|bar|bistro"]{cuisine_filter}(around:1000,{lat},{lon});
-          relation["amenity"~"cafe|bar|bistro"]{cuisine_filter}(around:1000,{lat},{lon});
-        );
-        out center meta tags;
-        """
-        
-        async with aiohttp.ClientSession() as session:
-            url = "https://overpass-api.de/api/interpreter"
-            data = {"data": query}
-            headers = {"User-Agent": "D8-Backend/1.0"}
-            
-            async with session.post(url, data=data, headers=headers) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return convert_osm_to_places(result.get("elements", []))
-    
-    except Exception as e:
-        print(f"OSM search error: {e}")
-    
-    return []
-
-async def search_osm_places_broad(lat: float, lon: float, request: DateRequest):
-    """Broader search without cuisine filter"""
-    try:
-        import aiohttp
-        
-        query = f"""
-        [out:json][timeout:25];
-        (
-          node["amenity"="restaurant"](around:2000,{lat},{lon});
-          way["amenity"="restaurant"](around:2000,{lat},{lon});
-          relation["amenity"="restaurant"](around:2000,{lat},{lon});
-          node["amenity"~"cafe|bar|bistro"](around:2000,{lat},{lon});
-          way["amenity"~"cafe|bar|bistro"](around:2000,{lat},{lon});
-          relation["amenity"~"cafe|bar|bistro"](around:2000,{lat},{lon});
-        );
-        out center meta tags;
-        """
-        
-        async with aiohttp.ClientSession() as session:
-            url = "https://overpass-api.de/api/interpreter"
-            data = {"data": query}
-            headers = {"User-Agent": "D8-Backend/1.0"}
-            
-            async with session.post(url, data=data, headers=headers) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return convert_osm_to_places(result.get("elements", []))
-    
-    except Exception as e:
-        print(f"Broad OSM search error: {e}")
-    
-    return []
-
-def convert_osm_to_places(elements):
-    """Convert OSM elements to our place format"""
-    places = []
-    
-    for element in elements:
-        tags = element.get("tags", {})
-        
-        # Get coordinates
-        lat = element.get("lat")
-        lon = element.get("lon")
-        
-        if not lat or not lon:
-            center = element.get("center", {})
-            lat = center.get("lat")
-            lon = center.get("lon")
-        
-        if not lat or not lon:
-            continue
-        
-        # Build address
-        address_parts = []
-        if tags.get("addr:street"):
-            address_parts.append(tags["addr:street"])
-        if tags.get("addr:housenumber"):
-            address_parts.append(tags["addr:housenumber"])
-        if tags.get("addr:city"):
-            address_parts.append(tags["addr:city"])
-        if tags.get("addr:state"):
-            address_parts.append(tags["addr:state"])
-        if tags.get("addr:postcode"):
-            address_parts.append(tags["addr:postcode"])
-        
-        address = ", ".join(address_parts) if address_parts else tags.get("addr:full", "")
-        
-        # Map price level
-        price_level = "medium"  # Default
-        if tags.get("price_level"):
-            price_map = {"1": "low", "2": "medium", "3": "high", "4": "luxury"}
-            price_level = price_map.get(tags["price_level"], "medium")
-        
-        # Skip non-restaurant places
-        amenity = tags.get("amenity", "")
-        if amenity not in ["restaurant", "cafe", "bar", "bistro", "pub"]:
-            continue
-            
-        # Create better description
-        description = tags.get("description") or tags.get("note") or ""
-        if not description:
-            cuisine = tags.get("cuisine", "various")
-            amenity_name = amenity.title()
-            if cuisine != "various":
-                description = f"{cuisine.title()} {amenity_name.lower()}"
-            else:
-                description = f"Local {amenity_name.lower()}"
-        
-        place = {
-            "name": tags.get("name", "Unnamed Place"),
-            "description": description,
-            "latitude": float(lat),
-            "longitude": float(lon),
-            "address": address,
-            "cuisine": tags.get("cuisine", "various"),
-            "price_level": price_level,
-            "rating": None,  # OSM doesn't have ratings
-            "phone": tags.get("phone"),
-            "website": tags.get("website"),
-            "opening_hours": tags.get("opening_hours"),
-            "amenities": build_amenities_list(tags),
-            "amenity": amenity
-        }
-        
-        places.append(place)
-    
-    return places
-
-def build_amenities_list(tags):
-    """Build amenities list from OSM tags"""
-    amenities = []
-    
-    if tags.get("outdoor_seating") == "yes":
-        amenities.append("Outdoor Seating")
-    if tags.get("takeaway") == "yes":
-        amenities.append("Takeaway")
-    if tags.get("delivery") == "yes":
-        amenities.append("Delivery")
-    if tags.get("wheelchair") == "yes":
-        amenities.append("Wheelchair Accessible")
-    if tags.get("wifi") == "yes":
-        amenities.append("WiFi")
-    if tags.get("parking") == "yes":
-        amenities.append("Parking")
-    if tags.get("smoking") == "no":
-        amenities.append("Non-Smoking")
-    
-    return amenities
-
-def generate_fallback_places(lat: float, lon: float, request: DateRequest):
-    """Generate fallback places when OSM search fails"""
-    import random
-    
-    # Sample places with realistic coordinates around the location
-    base_places = [
-        {
-            "name": "Local Bistro",
-            "description": "Cozy neighborhood restaurant with seasonal menu",
-            "cuisine": "american",
-            "price_level": "medium",
-            "rating": 4.2,
-            "amenities": ["Outdoor Seating", "WiFi", "Takeaway"]
-        },
-        {
-            "name": "Corner Cafe",
-            "description": "Friendly cafe serving coffee and light meals",
-            "cuisine": "coffee",
-            "price_level": "low",
-            "rating": 4.0,
-            "amenities": ["WiFi", "Takeaway", "Outdoor Seating"]
-        },
-        {
-            "name": "Fine Dining",
-            "description": "Upscale restaurant with elegant atmosphere",
-            "cuisine": "french",
-            "price_level": "luxury",
-            "rating": 4.6,
-            "amenities": ["Fine Dining", "Wine Pairing", "Valet Parking"]
-        },
-        {
-            "name": "Quick Bites",
-            "description": "Fast casual restaurant with diverse menu",
-            "cuisine": "american",
-            "price_level": "low",
-            "rating": 3.8,
-            "amenities": ["Takeaway", "Delivery", "Quick Service"]
-        },
-        {
-            "name": "Cozy Bar",
-            "description": "Neighborhood bar with craft cocktails",
-            "cuisine": "cocktails",
-            "price_level": "medium",
-            "rating": 4.1,
-            "amenities": ["Full Bar", "Outdoor Seating", "WiFi"]
-        }
-    ]
-    
-    # Filter by cuisine if specified
-    if request.cuisines:
-        filtered_places = []
-        for place in base_places:
-            if any(cuisine.lower() in place["cuisine"].lower() for cuisine in request.cuisines):
-                filtered_places.append(place)
-        if filtered_places:
-            base_places = filtered_places
-    
-    places = []
-    for i, place in enumerate(base_places):
-        # Generate realistic coordinates around the location
-        distance = random.uniform(200, 2000)  # 200m to 2km
-        angle = random.uniform(0, 2 * 3.14159)
-        
-        # Convert distance to lat/lon offset (rough approximation)
-        lat_offset = (distance / 111000) * random.uniform(-1, 1)
-        lon_offset = (distance / (111000 * 0.7)) * random.uniform(-1, 1)
-        
-        place_data = {
-            "name": place["name"],
-            "description": place["description"],
-            "latitude": lat + lat_offset,
-            "longitude": lon + lon_offset,
-            "address": f"{100 + i * 50} Main St, {request.location}",
-            "cuisine": place["cuisine"],
-            "price_level": place["price_level"],
-            "rating": place["rating"],
-            "phone": f"+1 555-{1000 + i:04d}",
-            "website": None,
-            "opening_hours": "Mo-Su 09:00-22:00",
-            "amenities": place["amenities"]
-        }
-        places.append(place_data)
-    
-    return places
+            raise Exception(f"Failed to get recommendations from OpenAI: {e}")
 
 if __name__ == "__main__":
     import uvicorn
-    import os
     try:
-        print("Starting D8 Backend API...")
-        # Use Railway's PORT environment variable, fallback to 8000 for local development
+        print("Starting D8 Backend API v2.0...")
         port = int(os.getenv("PORT", 8000))
         print(f"Starting server on port {port}")
         uvicorn.run(app, host="0.0.0.0", port=port)
