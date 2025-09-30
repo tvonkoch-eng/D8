@@ -792,14 +792,15 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
     """
     try:
         print(f"Creating OpenAI client with API key: {'configured' if openai_api_key else 'None'}...")
-        client = openai.OpenAI(api_key=openai_api_key)
+        # Use the older OpenAI client initialization for compatibility
+        openai.api_key = openai_api_key
         
         print("Making OpenAI API call...")
         system_message = """You are an expert restaurant recommendation specialist with extensive knowledge of dining scenes across major cities. You understand what makes restaurants perfect for dates, considering atmosphere, food quality, service, and romantic appeal. Always respond with valid JSON arrays containing detailed restaurant recommendations. Be specific about real, well-known restaurants and their actual details. Focus on establishments that locals would genuinely recommend to friends for special occasions."""
         if request.date_type == "activity":
             system_message = """You are an expert activity recommendation specialist with extensive knowledge of entertainment, recreation, and date-worthy activities across major cities. You understand what makes activities perfect for dates, considering engagement, conversation opportunities, and shared experiences. Always respond with valid JSON arrays containing detailed activity recommendations. Be specific about real, well-known venues and activities and their actual details. Focus on experiences that locals would genuinely recommend to friends for special occasions."""
         
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {
@@ -809,8 +810,7 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                 {"role": "user", "content": prompt}
             ],
             max_tokens=2000,  # Reduced from 3000 to 2000 for faster processing
-            temperature=0.7,
-            timeout=20.0  # Add 20-second timeout
+            temperature=0.7
         )
         print("OpenAI API call successful!")
         
