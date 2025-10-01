@@ -7,8 +7,9 @@ from datetime import datetime
 import json
 import requests
 import random
+from image_service import image_service
 
-app = FastAPI(title="D8 Backend API", version="2.0.0")
+app = FastAPI(title="D8 Backend API", version="2.0.1")
 
 # Configure OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -70,43 +71,17 @@ class RestaurantResponse(BaseModel):
     query_used: str
     processing_time: float
 
-def get_image_url(cuisine_type: str, name: str) -> str:
+def get_image_url(cuisine_type: str, name: str, location: str = "", latitude: float = None, longitude: float = None) -> str:
     """
-    Generate a placeholder image URL based on cuisine type
-    This uses free placeholder services that don't require API keys
+    Get enhanced image URL using Foursquare, Pexels, Unsplash, or fallback
     """
-    # Map cuisine types to food-related keywords for better image matching
-    cuisine_keywords = {
-        "italian": "pasta",
-        "mexican": "tacos",
-        "american": "burger",
-        "japanese": "sushi",
-        "chinese": "dim+sum",
-        "indian": "curry",
-        "thai": "pad+thai",
-        "french": "french+cuisine",
-        "mediterranean": "mediterranean+food",
-        "seafood": "seafood",
-        "steakhouse": "steak",
-        "contemporary": "fine+dining",
-        "sports": "sports+activity",
-        "outdoor": "outdoor+activity",
-        "indoor": "indoor+activity",
-        "entertainment": "entertainment",
-        "fitness": "fitness"
-    }
-    
-    keyword = cuisine_keywords.get(cuisine_type.lower(), "restaurant")
-    
-    # Use Lorem Picsum for free placeholder images with food-related keywords
-    # This provides high-quality placeholder images without API costs
-    width = 400
-    height = 300
-    
-    # Add some randomness to get different images
-    random_id = random.randint(1, 1000)
-    
-    return f"https://picsum.photos/{width}/{height}?random={random_id}&blur=1"
+    return image_service.get_restaurant_image_url(
+        name=name,
+        cuisine_type=cuisine_type,
+        location=location,
+        latitude=latitude,
+        longitude=longitude
+    )
 
 def reverse_geocode(latitude: float, longitude: float) -> str:
     """
@@ -151,6 +126,11 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().timestamp()}
+
+@app.get("/image-service-status")
+def image_service_status():
+    """Check the status of all image services"""
+    return image_service.get_api_status()
 
 @app.post("/explore", response_model=RestaurantResponse)
 async def get_explore_ideas(request: RestaurantRequest):
@@ -892,7 +872,7 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
         # If we couldn't parse any data, create fallback recommendations
         if not restaurants_data or len(restaurants_data) == 0:
             print("No valid data parsed, creating fallback recommendations")
-            recommendations = create_fallback_recommendations(actual_location)
+            recommendations = create_fallback_recommendations(actual_location, request.latitude, request.longitude)
         else:
             for restaurant_data in restaurants_data:
                 try:
@@ -911,7 +891,13 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                         why_recommended=restaurant_data.get("why_recommended", ""),
                         estimated_cost=restaurant_data.get("estimated_cost", ""),
                         best_time=restaurant_data.get("best_time", ""),
-                        image_url=get_image_url(restaurant_data.get("cuisine_type", ""), restaurant_data.get("name", ""))
+                        image_url=get_image_url(
+                            restaurant_data.get("cuisine_type", ""), 
+                            restaurant_data.get("name", ""),
+                            request.location,
+                            request.latitude,
+                            request.longitude
+                        )
                     )
                     recommendations.append(recommendation)
                 except Exception as e:
@@ -933,12 +919,14 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
         else:
             raise Exception(f"Failed to get recommendations from OpenAI: {e}")
 
-def create_fallback_recommendations(location: str) -> List[RestaurantRecommendation]:
+def create_fallback_recommendations(location: str, latitude: float = None, longitude: float = None) -> List[RestaurantRecommendation]:
     """
     Create fallback recommendations when OpenAI parsing fails
     """
     # Get coordinates for the location (simplified)
-    coords = get_location_coordinates(location)
+    if latitude is None or longitude is None:
+        coords = get_location_coordinates(location)
+        latitude, longitude = coords
     
     recommendations = [
         # Restaurants (3)
@@ -957,7 +945,7 @@ def create_fallback_recommendations(location: str) -> List[RestaurantRecommendat
             why_recommended="Perfect for casual first dates with great coffee and comfortable seating",
             estimated_cost="$5-12 per person",
             best_time="2:00 PM",
-            image_url=get_image_url("american", "coffee shop")
+            image_url=get_image_url("american", "coffee shop", location, latitude, longitude)
         ),
         RestaurantRecommendation(
             name="Italian Bistro",
@@ -974,7 +962,7 @@ def create_fallback_recommendations(location: str) -> List[RestaurantRecommendat
             why_recommended="Romantic atmosphere with excellent Italian cuisine perfect for dinner dates",
             estimated_cost="$20-35 per person",
             best_time="7:00 PM",
-            image_url=get_image_url("italian", "bistro")
+            image_url=get_image_url("italian", "bistro", location, latitude, longitude)
         ),
         RestaurantRecommendation(
             name="Sushi Bar",
@@ -991,7 +979,7 @@ def create_fallback_recommendations(location: str) -> List[RestaurantRecommendat
             why_recommended="Sophisticated dining experience perfect for special occasions",
             estimated_cost="$40-60 per person",
             best_time="8:00 PM",
-            image_url=get_image_url("japanese", "sushi")
+            image_url=get_image_url("japanese", "sushi", location, latitude, longitude)
         ),
         # Activities (3)
         RestaurantRecommendation(
@@ -1009,7 +997,7 @@ def create_fallback_recommendations(location: str) -> List[RestaurantRecommendat
             why_recommended="Perfect for outdoor dates with beautiful scenery and free activities",
             estimated_cost="Free",
             best_time="4:00 PM",
-            image_url=get_image_url("outdoor", "park")
+            image_url=get_image_url("outdoor", "park", location, latitude, longitude)
         ),
         RestaurantRecommendation(
             name="Art Museum",
@@ -1026,7 +1014,7 @@ def create_fallback_recommendations(location: str) -> List[RestaurantRecommendat
             why_recommended="Cultural experience perfect for intellectual dates and meaningful conversations",
             estimated_cost="$8-15 per person",
             best_time="2:00 PM",
-            image_url=get_image_url("entertainment", "museum")
+            image_url=get_image_url("entertainment", "museum", location, latitude, longitude)
         ),
         RestaurantRecommendation(
             name="Escape Room",
@@ -1043,7 +1031,7 @@ def create_fallback_recommendations(location: str) -> List[RestaurantRecommendat
             why_recommended="Interactive experience perfect for couples who love puzzles and teamwork",
             estimated_cost="$25-35 per person",
             best_time="7:00 PM",
-            image_url=get_image_url("entertainment", "escape room")
+            image_url=get_image_url("entertainment", "escape room", location, latitude, longitude)
         )
     ]
     
