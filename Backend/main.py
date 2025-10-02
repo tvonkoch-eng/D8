@@ -71,6 +71,51 @@ class RestaurantResponse(BaseModel):
     query_used: str
     processing_time: float
 
+def sanitize_address(address: str, location: str) -> str:
+    """
+    Convert specific addresses to generic district names to avoid navigation issues
+    """
+    if not address or address.strip() == "":
+        return f"Downtown {location}"
+    
+    address_lower = address.lower()
+    
+    # If the address already looks like a district name, keep it
+    district_keywords = ["downtown", "district", "area", "quarter", "neighborhood", "zone", "historic", "waterfront", "arts", "entertainment"]
+    if any(keyword in address_lower for keyword in district_keywords):
+        return address
+    
+    # If it contains specific street numbers or addresses, convert to district
+    if any(char.isdigit() for char in address):
+        # Try to determine the type of place and assign appropriate district
+        if any(keyword in address_lower for keyword in ["restaurant", "cafe", "bistro", "kitchen", "diner"]):
+            district_type = "Downtown"
+        elif any(keyword in address_lower for keyword in ["museum", "gallery", "theater", "arts"]):
+            district_type = "Arts District"
+        elif any(keyword in address_lower for keyword in ["park", "trail", "outdoor", "nature"]):
+            district_type = "Recreation Area"
+        elif any(keyword in address_lower for keyword in ["bar", "club", "entertainment", "venue"]):
+            district_type = "Entertainment District"
+        else:
+            district_type = "Downtown"
+        
+        # Extract the city/area part and make it generic
+        if "," in address:
+            # Split by comma and take the last part (usually city, state)
+            parts = address.split(",")
+            if len(parts) >= 2:
+                city_part = parts[-1].strip()
+                return f"{district_type}, {city_part}"
+        
+        # If no comma, try to extract meaningful area
+        words = address.split()
+        if len(words) >= 2:
+            # Take the last word as potential area identifier
+            return f"{district_type}, {words[-1]}"
+    
+    # Default fallback
+    return f"Downtown {location}"
+
 def get_image_url(cuisine_type: str, name: str, location: str = "", latitude: float = None, longitude: float = None) -> str:
     """
     Get enhanced image URL using Foursquare, Pexels, Unsplash, or fallback
@@ -410,7 +455,7 @@ Return your response as a JSON array with this exact structure:
     "name": "Place Name",
     "description": "Detailed 2-3 sentence description highlighting what makes this place special for dates",
     "location": "Specific neighborhood, City",
-    "address": "Full street address with city and state",
+    "address": "General area or district name (e.g., 'Downtown San Francisco', 'Historic District, San Francisco', 'Waterfront District, San Francisco') - DO NOT use specific street numbers or addresses",
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "italian" or "mexican" or "american" or "japanese" or "chinese" or "indian" or "thai" or "french" or "mediterranean" or "sports" or "outdoor" or "indoor" or "entertainment" or "fitness",
@@ -432,6 +477,7 @@ IMPORTANT:
 - If you don't know specific places in {actual_location}, recommend well-known chains or popular establishments that are likely to exist there
 - Focus on places that are commonly found in most cities (restaurants, parks, museums, entertainment venues)
 - Use realistic coordinates within the {actual_location} area
+- For addresses, use general district/area names like "Downtown", "Historic District", "Waterfront District", "Arts District", "Entertainment District" - NEVER use specific street numbers or addresses
 """
     
     return prompt
@@ -588,7 +634,7 @@ Return your response as a JSON array with this exact structure:
     "name": "Restaurant Name",
     "description": "Detailed 2-3 sentence description highlighting what makes this restaurant special for dates",
     "location": "Specific neighborhood, City",
-    "address": "Full street address with city and state",
+    "address": "General area or district name (e.g., 'Downtown San Francisco', 'Historic District, San Francisco', 'Waterfront District, San Francisco') - DO NOT use specific street numbers or addresses",
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "Specific cuisine type",
@@ -602,7 +648,7 @@ Return your response as a JSON array with this exact structure:
   }}
 ]
 
-IMPORTANT: Only recommend real, well-known restaurants that actually exist in {actual_location} or nearby areas. Do not make up restaurants or provide generic recommendations.
+IMPORTANT: Only recommend real, well-known restaurants that actually exist in {actual_location} or nearby areas. Do not make up restaurants or provide generic recommendations. For addresses, use general district/area names like "Downtown", "Historic District", "Waterfront District", "Arts District" - NEVER use specific street numbers or addresses.
 """
     
     return prompt
@@ -746,7 +792,7 @@ Return your response as a JSON array with this exact structure:
     "name": "Activity Name",
     "description": "Concise 1-2 sentence description highlighting what makes this activity special for dates",
     "location": "Specific neighborhood, City",
-    "address": "Full street address with city and state",
+    "address": "General area or district name (e.g., 'Downtown San Francisco', 'Historic District, San Francisco', 'Waterfront District, San Francisco') - DO NOT use specific street numbers or addresses",
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "Activity type (sports/outdoor/indoor/entertainment/fitness)",
@@ -761,7 +807,7 @@ Return your response as a JSON array with this exact structure:
   }}
 ]
 
-IMPORTANT: Only recommend real, well-known activities and venues that actually exist in {actual_location} or nearby areas. Do not make up activities or provide generic recommendations.
+IMPORTANT: Only recommend real, well-known activities and venues that actually exist in {actual_location} or nearby areas. Do not make up activities or provide generic recommendations. For addresses, use general district/area names like "Downtown", "Historic District", "Waterfront District", "Arts District", "Entertainment District" - NEVER use specific street numbers or addresses.
 """
     
     return prompt
@@ -876,11 +922,16 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
         else:
             for restaurant_data in restaurants_data:
                 try:
+                    # Sanitize the address to avoid navigation issues
+                    raw_address = restaurant_data.get("address", "")
+                    sanitized_address = sanitize_address(raw_address, request.location)
+                    print(f"Address sanitization: '{raw_address}' -> '{sanitized_address}'")
+                    
                     recommendation = RestaurantRecommendation(
                         name=restaurant_data.get("name", "Unknown Restaurant"),
                         description=restaurant_data.get("description", ""),
                         location=restaurant_data.get("location", ""),
-                        address=restaurant_data.get("address", ""),
+                        address=sanitized_address,
                         latitude=restaurant_data.get("latitude", 0.0),
                         longitude=restaurant_data.get("longitude", 0.0),
                         cuisine_type=restaurant_data.get("cuisine_type", ""),
@@ -934,9 +985,9 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             name="Local Coffee Shop",
             description="A cozy coffee shop perfect for casual dates and conversation. Great atmosphere for getting to know someone over coffee and pastries.",
             location=location,
-            address=f"123 Main St, {location}",
-            latitude=coords[0],
-            longitude=coords[1],
+            address=f"Downtown {location}",
+            latitude=coords[0] + random.uniform(-0.005, 0.005),
+            longitude=coords[1] + random.uniform(-0.005, 0.005),
             cuisine_type="american",
             price_level="low",
             is_open=True,
@@ -951,9 +1002,9 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             name="Italian Bistro",
             description="A charming Italian restaurant with romantic ambiance and authentic pasta dishes. Perfect for dinner dates.",
             location=location,
-            address=f"456 Oak Ave, {location}",
-            latitude=coords[0] + 0.01,
-            longitude=coords[1] + 0.01,
+            address=f"Historic District, {location}",
+            latitude=coords[0] + random.uniform(-0.005, 0.005),
+            longitude=coords[1] + random.uniform(-0.005, 0.005),
             cuisine_type="italian",
             price_level="medium",
             is_open=True,
@@ -968,9 +1019,9 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             name="Sushi Bar",
             description="An elegant sushi restaurant with fresh fish and intimate seating. Perfect for sophisticated dates and trying new flavors together.",
             location=location,
-            address=f"789 Sushi St, {location}",
-            latitude=coords[0] + 0.015,
-            longitude=coords[1] - 0.015,
+            address=f"Waterfront District, {location}",
+            latitude=coords[0] + random.uniform(-0.005, 0.005),
+            longitude=coords[1] + random.uniform(-0.005, 0.005),
             cuisine_type="japanese",
             price_level="high",
             is_open=True,
@@ -986,9 +1037,9 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             name="Local Park",
             description="A beautiful park with walking trails, picnic areas, and scenic views. Great for outdoor dates and activities.",
             location=location,
-            address=f"789 Park Blvd, {location}",
-            latitude=coords[0] - 0.01,
-            longitude=coords[1] - 0.01,
+            address=f"City Park, {location}",
+            latitude=coords[0] + random.uniform(-0.005, 0.005),
+            longitude=coords[1] + random.uniform(-0.005, 0.005),
             cuisine_type="outdoor",
             price_level="free",
             is_open=True,
@@ -1003,9 +1054,9 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             name="Art Museum",
             description="A cultural destination with rotating exhibits and beautiful architecture. Great for intellectual dates and cultural experiences.",
             location=location,
-            address=f"321 Culture St, {location}",
-            latitude=coords[0] + 0.02,
-            longitude=coords[1] - 0.02,
+            address=f"Arts District, {location}",
+            latitude=coords[0] + random.uniform(-0.005, 0.005),
+            longitude=coords[1] + random.uniform(-0.005, 0.005),
             cuisine_type="entertainment",
             price_level="low",
             is_open=True,
@@ -1020,9 +1071,9 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             name="Escape Room",
             description="An interactive puzzle experience perfect for couples who enjoy challenges and teamwork. Great for building connection through problem-solving.",
             location=location,
-            address=f"555 Puzzle Ave, {location}",
-            latitude=coords[0] + 0.025,
-            longitude=coords[1] + 0.025,
+            address=f"Entertainment District, {location}",
+            latitude=coords[0] + random.uniform(-0.005, 0.005),
+            longitude=coords[1] + random.uniform(-0.005, 0.005),
             cuisine_type="entertainment",
             price_level="medium",
             is_open=True,
