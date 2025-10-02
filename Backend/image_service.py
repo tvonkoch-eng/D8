@@ -72,7 +72,7 @@ class EnhancedImageService:
             return None
         
         try:
-            # First, search for the venue
+            # First, search for the venue using the new Places API
             search_url = "https://api.foursquare.com/v3/places/search"
             search_params = {
                 "query": name,
@@ -81,7 +81,7 @@ class EnhancedImageService:
                 "limit": 5
             }
             search_headers = {
-                "Authorization": self.foursquare_api_key,
+                "Authorization": f"FSQ3 {self.foursquare_api_key}",
                 "Accept": "application/json"
             }
             
@@ -101,7 +101,7 @@ class EnhancedImageService:
                         details_url = f"https://api.foursquare.com/v3/places/{venue_id}"
                         details_params = {"fields": "photos"}
                         details_headers = {
-                            "Authorization": self.foursquare_api_key,
+                            "Authorization": f"FSQ3 {self.foursquare_api_key}",
                             "Accept": "application/json"
                         }
                         
