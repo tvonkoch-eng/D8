@@ -64,6 +64,8 @@ class RestaurantRecommendation(BaseModel):
     estimated_cost: str
     best_time: str
     image_url: Optional[str] = None
+    website_url: Optional[str] = None
+    menu_url: Optional[str] = None
 
 class RestaurantResponse(BaseModel):
     recommendations: List[RestaurantRecommendation]
@@ -466,7 +468,9 @@ Return your response as a JSON array with this exact structure:
     "why_recommended": "Detailed explanation of why this place is perfect for exploring and dating",
     "estimated_cost": "Specific cost range per person",
     "best_time": "Optimal time to visit",
-    "duration": "Expected duration (e.g., '1-2 hours', '2-3 hours', 'Half day', 'Full day')"
+    "duration": "Expected duration (e.g., '1-2 hours', '2-3 hours', 'Half day', 'Full day')",
+    "website_url": "Official restaurant/venue website URL if known (e.g., 'https://www.restaurantname.com')",
+    "menu_url": "Direct link to menu if known (e.g., 'https://www.restaurantname.com/menu')"
   }}
 ]
 
@@ -644,7 +648,9 @@ Return your response as a JSON array with this exact structure:
     "rating": 4.5,
     "why_recommended": "Detailed explanation of why this restaurant is perfect for this specific date occasion",
     "estimated_cost": "Specific cost range per person",
-    "best_time": "Optimal time to visit for this meal time"
+    "best_time": "Optimal time to visit for this meal time",
+    "website_url": "Official restaurant website URL if known (e.g., 'https://www.restaurantname.com')",
+    "menu_url": "Direct link to menu if known (e.g., 'https://www.restaurantname.com/menu')"
   }}
 ]
 
@@ -803,7 +809,9 @@ Return your response as a JSON array with this exact structure:
     "why_recommended": "Brief explanation of why this activity is perfect for this specific date occasion",
     "estimated_cost": "Specific cost range per person",
     "best_time": "Optimal time to visit for this activity",
-    "duration": "Expected duration (e.g., '1-2 hours', '2-3 hours', 'Half day', 'Full day')"
+    "duration": "Expected duration (e.g., '1-2 hours', '2-3 hours', 'Half day', 'Full day')",
+    "website_url": "Official venue website URL if known (e.g., 'https://www.venuename.com')",
+    "menu_url": "Direct link to activity details/pricing if known (e.g., 'https://www.venuename.com/activities')"
   }}
 ]
 
@@ -948,7 +956,9 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                             request.location,
                             request.latitude,
                             request.longitude
-                        )
+                        ),
+                        website_url=restaurant_data.get("website_url"),
+                        menu_url=restaurant_data.get("menu_url")
                     )
                     recommendations.append(recommendation)
                 except Exception as e:
