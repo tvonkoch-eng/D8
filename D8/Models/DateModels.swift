@@ -184,20 +184,7 @@ enum Cuisine: CaseIterable, Hashable {
         }
     }
     
-    var emoji: String {
-        switch self {
-        case .italian: return "🍝"
-        case .mexican: return "🌮"
-        case .american: return "🍔"
-        case .japanese: return "🍣"
-        case .chinese: return "🥢"
-        case .indian: return "🍛"
-        case .thai: return "🌶️"
-        case .french: return "🥐"
-        case .mediterranean: return "🫒"
-        case .notSure: return "❓"
-        }
-    }
+    // Emoji property removed for cleaner UI
 }
 
 // MARK: - Date Recommendation

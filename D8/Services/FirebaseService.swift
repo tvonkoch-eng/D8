@@ -184,6 +184,18 @@ class FirebaseService: ObservableObject {
         ], merge: true)
     }
     
+    func deleteExploreIdeas(for location: String, date: String) async throws {
+        let locationId = location.lowercased().replacingOccurrences(of: " ", with: "_")
+        let docRef = db.collection("exploreIdeas")
+            .document("locations")
+            .collection(locationId)
+            .document("dates")
+            .collection(date)
+            .document("ideas")
+        
+        try await docRef.delete()
+    }
+    
     // MARK: - Cleanup Functions
     
     func cleanupExpiredIdeas() async throws {

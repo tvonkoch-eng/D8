@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import requests
 import random
+import re
 from image_service import image_service
 
 app = FastAPI(title="D8 Backend API", version="2.0.1")
@@ -75,48 +76,33 @@ class RestaurantResponse(BaseModel):
 
 def sanitize_address(address: str, location: str) -> str:
     """
-    Convert specific addresses to generic district names to avoid navigation issues
+    Validate addresses - prefer exact ones but allow some generic ones
     """
     if not address or address.strip() == "":
-        return f"Downtown {location}"
+        return f"Downtown {location}"  # Provide fallback
     
     address_lower = address.lower()
     
-    # If the address already looks like a district name, keep it
-    district_keywords = ["downtown", "district", "area", "quarter", "neighborhood", "zone", "historic", "waterfront", "arts", "entertainment"]
-    if any(keyword in address_lower for keyword in district_keywords):
+    # Check if it's a very generic address (only reject the most generic ones)
+    very_generic_keywords = ["downtown", "district", "area", "quarter", "neighborhood"]
+    if any(keyword in address_lower for keyword in very_generic_keywords):
+        # Try to make it more specific by adding location context
+        if "," in address:
+            return address  # Keep if it has city/state info
+        else:
+            return f"{address}, {location}"  # Add location context
+    
+    # If it contains a street number, it's good
+    if re.match(r'^\d+', address.strip()):
         return address
     
-    # If it contains specific street numbers or addresses, convert to district
-    if any(char.isdigit() for char in address):
-        # Try to determine the type of place and assign appropriate district
-        if any(keyword in address_lower for keyword in ["restaurant", "cafe", "bistro", "kitchen", "diner"]):
-            district_type = "Downtown"
-        elif any(keyword in address_lower for keyword in ["museum", "gallery", "theater", "arts"]):
-            district_type = "Arts District"
-        elif any(keyword in address_lower for keyword in ["park", "trail", "outdoor", "nature"]):
-            district_type = "Recreation Area"
-        elif any(keyword in address_lower for keyword in ["bar", "club", "entertainment", "venue"]):
-            district_type = "Entertainment District"
-        else:
-            district_type = "Downtown"
-        
-        # Extract the city/area part and make it generic
-        if "," in address:
-            # Split by comma and take the last part (usually city, state)
-            parts = address.split(",")
-            if len(parts) >= 2:
-                city_part = parts[-1].strip()
-                return f"{district_type}, {city_part}"
-        
-        # If no comma, try to extract meaningful area
-        words = address.split()
-        if len(words) >= 2:
-            # Take the last word as potential area identifier
-            return f"{district_type}, {words[-1]}"
+    # If it contains street indicators, it's good
+    street_indicators = ['street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'way', 'court', 'ct', 'place', 'pl']
+    if any(indicator in address_lower for indicator in street_indicators):
+        return address
     
-    # Default fallback
-    return f"Downtown {location}"
+    # For other cases, add location context
+    return f"{address}, {location}"
 
 def get_image_url(cuisine_type: str, name: str, location: str = "", latitude: float = None, longitude: float = None) -> str:
     """
@@ -457,7 +443,7 @@ Return your response as a JSON array with this exact structure:
     "name": "Place Name",
     "description": "Detailed 2-3 sentence description highlighting what makes this place special for dates",
     "location": "Specific neighborhood, City",
-    "address": "General area or district name (e.g., 'Downtown San Francisco', 'Historic District, San Francisco', 'Waterfront District, San Francisco') - DO NOT use specific street numbers or addresses",
+    "address": "EXACT street address with street number (e.g., '123 Main Street, San Francisco, CA', '456 Oak Avenue, San Francisco, CA') - ALWAYS include street numbers when possible",
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "italian" or "mexican" or "american" or "japanese" or "chinese" or "indian" or "thai" or "french" or "mediterranean" or "sports" or "outdoor" or "indoor" or "entertainment" or "fitness",
@@ -474,14 +460,7 @@ Return your response as a JSON array with this exact structure:
   }}
 ]
 
-IMPORTANT: 
-- Only recommend real, well-known places that actually exist in {actual_location} or nearby areas
-- Do not make up places or provide generic recommendations
-- Ensure the mix includes both restaurants and activities
-- If you don't know specific places in {actual_location}, recommend well-known chains or popular establishments that are likely to exist there
-- Focus on places that are commonly found in most cities (restaurants, parks, museums, entertainment venues)
-- Use realistic coordinates within the {actual_location} area
-- For addresses, use general district/area names like "Downtown", "Historic District", "Waterfront District", "Arts District", "Entertainment District" - NEVER use specific street numbers or addresses
+IMPORTANT: Only recommend real places in {actual_location}. Use exact addresses when possible, otherwise use area names with city context.
 """
     
     return prompt
@@ -638,7 +617,7 @@ Return your response as a JSON array with this exact structure:
     "name": "Restaurant Name",
     "description": "Detailed 2-3 sentence description highlighting what makes this restaurant special for dates",
     "location": "Specific neighborhood, City",
-    "address": "General area or district name (e.g., 'Downtown San Francisco', 'Historic District, San Francisco', 'Waterfront District, San Francisco') - DO NOT use specific street numbers or addresses",
+    "address": "EXACT street address with street number (e.g., '123 Main Street, San Francisco, CA', '456 Oak Avenue, San Francisco, CA') - ALWAYS include street numbers when possible",
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "Specific cuisine type",
@@ -654,7 +633,7 @@ Return your response as a JSON array with this exact structure:
   }}
 ]
 
-IMPORTANT: Only recommend real, well-known restaurants that actually exist in {actual_location} or nearby areas. Do not make up restaurants or provide generic recommendations. For addresses, use general district/area names like "Downtown", "Historic District", "Waterfront District", "Arts District" - NEVER use specific street numbers or addresses.
+IMPORTANT: Only recommend real restaurants in {actual_location}. Use exact addresses when possible, otherwise use area names with city context.
 """
     
     return prompt
@@ -798,7 +777,7 @@ Return your response as a JSON array with this exact structure:
     "name": "Activity Name",
     "description": "Concise 1-2 sentence description highlighting what makes this activity special for dates",
     "location": "Specific neighborhood, City",
-    "address": "General area or district name (e.g., 'Downtown San Francisco', 'Historic District, San Francisco', 'Waterfront District, San Francisco') - DO NOT use specific street numbers or addresses",
+    "address": "EXACT street address with street number (e.g., '123 Main Street, San Francisco, CA', '456 Oak Avenue, San Francisco, CA') - ALWAYS include street numbers when possible",
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "Activity type (sports/outdoor/indoor/entertainment/fitness)",
@@ -815,7 +794,7 @@ Return your response as a JSON array with this exact structure:
   }}
 ]
 
-IMPORTANT: Only recommend real, well-known activities and venues that actually exist in {actual_location} or nearby areas. Do not make up activities or provide generic recommendations. For addresses, use general district/area names like "Downtown", "Historic District", "Waterfront District", "Arts District", "Entertainment District" - NEVER use specific street numbers or addresses.
+IMPORTANT: Only recommend real activities in {actual_location}. Use exact addresses when possible, otherwise use area names with city context.
 """
     
     return prompt
@@ -930,7 +909,7 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
         else:
             for restaurant_data in restaurants_data:
                 try:
-                    # Sanitize the address to avoid navigation issues
+                    # Sanitize the address
                     raw_address = restaurant_data.get("address", "")
                     sanitized_address = sanitize_address(raw_address, request.location)
                     print(f"Address sanitization: '{raw_address}' -> '{sanitized_address}'")

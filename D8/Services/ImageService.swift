@@ -15,6 +15,7 @@ class ImageService: ObservableObject {
     private let unsplashAccessKey = "YOUR_UNSPLASH_ACCESS_KEY" // Get from https://unsplash.com/developers
     private let pexelsAPIKey = "YOUR_PEXELS_API_KEY" // Get from https://www.pexels.com/api/
     private let foursquareAPIKey = "YOUR_FOURSQUARE_API_KEY" // Get from https://developer.foursquare.com/
+    private let googlePlacesAPIKey = "AIzaSyCz7OlK0dpbMuX1FLQXpUjKUMJQf0XzTkY" // Google Places API key
     
     // Cache for images to avoid repeated API calls
     private var imageCache: [String: UIImage] = [:]
@@ -37,6 +38,12 @@ class ImageService: ObservableObject {
         // Check cache first
         if let cachedURL = urlCache[cacheKey] {
             return cachedURL
+        }
+        
+        // Try Google Places API first (most relevant for restaurants)
+        if let imageURL = await fetchGooglePlacesImage(for: recommendation) {
+            urlCache[cacheKey] = imageURL
+            return imageURL
         }
         
         // Determine search query based on cuisine type
@@ -117,6 +124,66 @@ class ImageService: ObservableObject {
     }
     
     // MARK: - Private Methods
+    
+    private func fetchGooglePlacesImage(for recommendation: RestaurantRecommendation) async -> String? {
+        // Step 1: Search for the place to get place_id
+        guard let placeId = await searchGooglePlaceId(for: recommendation) else {
+            return nil
+        }
+        
+        // Step 2: Get place details with photo references
+        guard let photoReference = await getGooglePlacePhotoReference(for: placeId) else {
+            return nil
+        }
+        
+        // Step 3: Construct the photo URL
+        return constructGooglePhotoURL(photoReference: photoReference)
+    }
+    
+    private func searchGooglePlaceId(for recommendation: RestaurantRecommendation) async -> String? {
+        let query = "\(recommendation.name) \(recommendation.address)"
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        
+        let urlString = "https://maps.googleapis.com/maps/api/place/textsearch/json?query=\(encodedQuery)&key=\(googlePlacesAPIKey)"
+        
+        guard let url = URL(string: urlString) else { return nil }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode(GooglePlacesSearchResponse.self, from: data)
+            
+            if let result = response.results.first {
+                return result.place_id
+            }
+        } catch {
+            print("Google Places search error: \(error)")
+        }
+        
+        return nil
+    }
+    
+    private func getGooglePlacePhotoReference(for placeId: String) async -> String? {
+        let urlString = "https://maps.googleapis.com/maps/api/place/details/json?place_id=\(placeId)&fields=photos&key=\(googlePlacesAPIKey)"
+        
+        guard let url = URL(string: urlString) else { return nil }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode(GooglePlacesDetailsResponse.self, from: data)
+            
+            if let photo = response.result.photos.first {
+                return photo.photo_reference
+            }
+        } catch {
+            print("Google Places details error: \(error)")
+        }
+        
+        return nil
+    }
+    
+    private func constructGooglePhotoURL(photoReference: String) -> String {
+        return "https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=\(photoReference)&key=\(googlePlacesAPIKey)"
+    }
     
     private func getSearchQuery(for recommendation: RestaurantRecommendation) -> String {
         let cuisineType = recommendation.cuisineType.lowercased()
@@ -242,7 +309,9 @@ class ImageService: ObservableObject {
                 estimatedCost: idea.estimatedCost,
                 bestTime: idea.bestTime,
                 duration: idea.duration,
-                imageURL: idea.imageURL
+                imageURL: idea.imageURL,
+                websiteURL: idea.websiteURL,
+                menuURL: idea.menuURL
             ))
         } else if let activityType = idea.activityType {
             return getSearchQuery(for: RestaurantRecommendation(
@@ -261,7 +330,9 @@ class ImageService: ObservableObject {
                 estimatedCost: idea.estimatedCost,
                 bestTime: idea.bestTime,
                 duration: idea.duration,
-                imageURL: idea.imageURL
+                imageURL: idea.imageURL,
+                websiteURL: idea.websiteURL,
+                menuURL: idea.menuURL
             ))
         } else {
             return "restaurant food dining"
@@ -428,4 +499,28 @@ struct PexelsSrc: Codable {
     let medium: String
     let small: String
     let tiny: String
+}
+
+// MARK: - Google Places API Response Models
+
+struct GooglePlacesSearchResponse: Codable {
+    let results: [GooglePlacesSearchResult]
+}
+
+struct GooglePlacesSearchResult: Codable {
+    let place_id: String
+    let name: String
+}
+
+struct GooglePlacesDetailsResponse: Codable {
+    let result: GooglePlacesDetailsResult
+}
+
+struct GooglePlacesDetailsResult: Codable {
+    let photos: [GooglePlacesPhoto]
+}
+
+struct GooglePlacesPhoto: Codable {
+    let photo_reference: String
+    let html_attributions: [String]
 }

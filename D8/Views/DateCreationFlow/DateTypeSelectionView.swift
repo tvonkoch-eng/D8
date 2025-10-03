@@ -55,7 +55,7 @@ struct DateTypeOptionView: View {
             HStack(spacing: 20) {
                 // Icon based on date type
                 if dateType == .meal {
-                    Text("🍽️")
+                    Text("")
                         .font(.system(size: 40))
                 } else {
                     Image(systemName: dateType.icon)

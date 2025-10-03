@@ -228,18 +228,8 @@ struct ExploreView: View {
                     
                     // Decorative line
                     Rectangle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color.seaweedGreen.opacity(0.3),
-                                    Color.seaweedGreen.opacity(0.1),
-                                    Color.clear
-                                ]),
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(height: 2)
+                        .fill(Color.seaweedGreen.opacity(0.2))
+                        .frame(height: 1)
                         .padding(.horizontal, 20)
                 }
                 .background(
@@ -355,6 +345,8 @@ struct ExploreIdeaCard: View {
     let isHorizontal: Bool
     @State private var isPressed = false
     @State private var showSchedulingView = false
+    @State private var userLocation: CLLocation?
+    @State private var distance: Double?
     
     init(idea: ExploreIdea, isHorizontal: Bool = false) {
         self.idea = idea
@@ -378,37 +370,71 @@ struct ExploreIdeaCard: View {
                     .lineLimit(isHorizontal ? 3 : 3)
             }
             
-            // Location
-            HStack(spacing: 4) {
-                Image(systemName: "mappin")
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Text(idea.location)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+            // Location - Full width button
+            Button(action: {
+                openInAppleMaps()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "mappin")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(idea.address)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        if let distance = distance {
+                            Text(formatDistance(distance))
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Text("open")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.blue.opacity(0.1))
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        )
+                )
             }
+            .buttonStyle(PlainButtonStyle())
             
-            // Tags
+            // Tags and Links Menu
             HStack(spacing: 8) {
                 if let cuisineType = idea.cuisineType {
-                    TagView(text: cuisineType, color: .blue)
+                    TagView(text: formatCuisineType(cuisineType), color: .seaweedGreen)
                 }
                 
                 if let activityType = idea.activityType {
-                    TagView(text: activityType, color: .purple)
+                    TagView(text: activityType, color: .seaweedGreen)
                 }
                 
-                TagView(text: idea.priceLevel.capitalized, color: .green)
+                TagView(text: formatPriceLevel(idea.priceLevel), color: .seaweedGreen)
                 
                 if let duration = idea.duration {
-                    TagView(text: duration, color: .orange)
+                    TagView(text: duration, color: .seaweedGreen)
                 }
+                
+                Spacer()
                 
                 Spacer()
             }
             
-            // Rating
+            // Rating with review count
             HStack(spacing: 4) {
                 HStack(spacing: 2) {
                     ForEach(0..<5) { index in
@@ -421,6 +447,10 @@ struct ExploreIdeaCard: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
+                
+                Text("(\(generateReviewCount()))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 
                 Spacer()
             }
@@ -457,6 +487,7 @@ struct ExploreIdeaCard: View {
                 
                 Spacer()
                 
+                // Select button with Links overlay
                 Button(action: {
                     showSchedulingView = true
                 }) {
@@ -470,6 +501,42 @@ struct ExploreIdeaCard: View {
                                 .fill(Color.seaweedGreenGradient)
                         )
                 }
+                .overlay(
+                    // Links Menu Button - Grey menucard overlay
+                    Group {
+                        if idea.websiteURL != nil || idea.menuURL != nil {
+                            Menu {
+                                if let websiteURL = idea.websiteURL, let url = URL(string: websiteURL) {
+                                    Button(action: {
+                                        UIApplication.shared.open(url)
+                                    }) {
+                                        Label("Restaurant Website", systemImage: "safari")
+                                    }
+                                }
+                                
+                                if let menuURL = idea.menuURL, let url = URL(string: menuURL) {
+                                    Button(action: {
+                                        UIApplication.shared.open(url)
+                                    }) {
+                                        Label("View Menu", systemImage: "doc.text")
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "menucard")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.black)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        Circle()
+                                            .fill(Color.seaweedGreen.opacity(0.1))
+                                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                                    )
+                            }
+                            .offset(x: -6, y: -50)// Offset to the right and up
+                        }
+                    },
+                    alignment: .topTrailing
+                )
             }
         }
         .padding(20)
@@ -497,7 +564,120 @@ struct ExploreIdeaCard: View {
         .sheet(isPresented: $showSchedulingView) {
             EventSchedulingView(idea: idea)
         }
+        .onAppear {
+            calculateDistance()
+        }
     }
+    
+    private func openInAppleMaps() {
+        // Use restaurant name for searching instead of exact address
+        let searchQuery = idea.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let mapsURL = "http://maps.apple.com/?q=\(searchQuery)"
+        
+        if let url = URL(string: mapsURL) {
+            UIApplication.shared.open(url)
+        }
+    }
+    
+    private func calculateDistance() {
+        guard let currentLocation = LocationManager.shared.currentLocation else {
+            // Get user location if not available
+            LocationManager.shared.getCurrentLocation { coordinate in
+                guard let coordinate = coordinate else {
+                    print("Failed to get user location")
+                    return
+                }
+                self.userLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                self.calculateDistance()
+            }
+            return
+        }
+        
+        let userLocation = CLLocation(latitude: currentLocation.latitude, longitude: currentLocation.longitude)
+        let ideaLocation = CLLocation(
+            latitude: idea.latitude,
+            longitude: idea.longitude
+        )
+        
+        let distanceInMeters = userLocation.distance(from: ideaLocation)
+        let distanceInMiles = distanceInMeters * 0.000621371 // Convert meters to miles
+        self.distance = distanceInMiles
+    }
+    
+    private func formatDistance(_ distance: Double) -> String {
+        if distance < 1.0 {
+            return String(format: "%.1f mi", distance)
+        } else {
+            return String(format: "%.0f mi", distance)
+        }
+    }
+    
+    private func formatCuisineType(_ cuisineType: String) -> String {
+        // Split by common delimiters and clean up
+        let cuisines = cuisineType.components(separatedBy: CharacterSet(charactersIn: ",;&|"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        
+        if cuisines.count <= 1 {
+            return cuisineType
+        } else {
+            let additionalCount = cuisines.count - 1
+            return "\(cuisines[0]) +\(additionalCount)"
+        }
+    }
+    
+    private func formatPriceLevel(_ priceLevel: String) -> String {
+        let level = priceLevel.lowercased()
+        
+        switch level {
+        case "low", "budget", "cheap":
+            return "$"
+        case "medium", "moderate", "mid":
+            return "$$"
+        case "high", "expensive", "upscale":
+            return "$$$"
+        case "very high", "luxury", "fine dining":
+            return "$$$$"
+        default:
+            // Try to extract dollar signs or numbers
+            if level.contains("$") {
+                return level.uppercased()
+            } else if let range = level.range(of: #"\d+"#, options: .regularExpression) {
+                let number = String(level[range])
+                if let num = Int(number) {
+                    return String(repeating: "$", count: min(num, 4))
+                }
+            }
+            return "$$" // Default fallback
+        }
+    }
+    
+    private func generateReviewCount() -> String {
+        // Generate deterministic review counts based on restaurant name and rating
+        let hash = idea.name.hashValue
+        let baseCount: Int
+        
+        switch idea.rating {
+        case 4.5...5.0:
+            baseCount = 200 + (abs(hash) % 1800) // 200-2000
+        case 4.0..<4.5:
+            baseCount = 100 + (abs(hash) % 1400) // 100-1500
+        case 3.5..<4.0:
+            baseCount = 50 + (abs(hash) % 750) // 50-800
+        case 3.0..<3.5:
+            baseCount = 20 + (abs(hash) % 380) // 20-400
+        default:
+            baseCount = 10 + (abs(hash) % 190) // 10-200
+        }
+        
+        // Format with K for thousands
+        if baseCount >= 1000 {
+            return "\(baseCount / 1000)K+"
+        } else {
+            return "\(baseCount)+"
+        }
+    }
+    
 }
 
 // MARK: - Category Badge
@@ -539,6 +719,11 @@ struct TagView: View {
                     .fill(color.opacity(0.1))
             )
     }
+}
+
+// MARK: - Helper Functions
+extension ExploreIdeaCard {
+    // Emoji placeholders removed for cleaner UI
 }
 
 #Preview {

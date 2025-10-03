@@ -15,14 +15,17 @@ class EnhancedImageService:
         self.foursquare_api_key = os.getenv("FOURSQUARE_API_KEY")
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
         self.unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
+        self.google_places_api_key = os.getenv("GOOGLE_PLACES_API_KEY", "AIzaSyCz7OlK0dpbMuX1FLQXpUjKUMJQf0XzTkY")
         
         # Rate limiting tracking
         self.foursquare_calls = 0
         self.pexels_calls = 0
         self.unsplash_calls = 0
+        self.google_places_calls = 0
         self.last_foursquare_reset = time.time()
         self.last_pexels_reset = time.time()
         self.last_unsplash_reset = time.time()
+        self.last_google_places_reset = time.time()
         
         # Cache for image URLs to avoid repeated API calls
         self.image_cache = {}
@@ -42,21 +45,25 @@ class EnhancedImageService:
         
         image_url = None
         
-        # 1. Try Foursquare first (location-specific, real restaurant photos)
-        if self.foursquare_api_key and (latitude and longitude):
+        # 1. Try Google Places API first (most relevant for restaurants)
+        if self.google_places_api_key and (latitude and longitude):
+            image_url = self._fetch_google_places_image(name, location, latitude, longitude)
+        
+        # 2. Try Foursquare (location-specific, real restaurant photos)
+        if not image_url and self.foursquare_api_key and (latitude and longitude):
             image_url = self._fetch_foursquare_image(name, location, latitude, longitude)
         
-        # 2. Fallback to Pexels (high-quality, free)
+        # 3. Fallback to Pexels (high-quality, free)
         if not image_url and self.pexels_api_key:
             search_query = self._create_search_query(name, cuisine_type, location)
             image_url = self._fetch_pexels_image(search_query)
         
-        # 3. Fallback to Unsplash (high-quality, free)
+        # 4. Fallback to Unsplash (high-quality, free)
         if not image_url and self.unsplash_api_key:
             search_query = self._create_search_query(name, cuisine_type, location)
             image_url = self._fetch_unsplash_image(search_query)
         
-        # 4. Final fallback to Lorem Picsum (current system)
+        # 5. Final fallback to Lorem Picsum (current system)
         if not image_url:
             image_url = self._get_lorem_picsum_url(cuisine_type, name)
         
@@ -120,6 +127,62 @@ class EnhancedImageService:
             
         except Exception as e:
             print(f"Foursquare API error: {e}")
+        
+        return None
+    
+    def _fetch_google_places_image(self, name: str, location: str, latitude: float, longitude: float) -> Optional[str]:
+        """
+        Fetch restaurant image from Google Places API
+        """
+        if not self._check_google_places_rate_limit():
+            return None
+        
+        try:
+            # Step 1: Search for the place to get place_id
+            search_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+            search_params = {
+                "query": f"{name} {location}",
+                "location": f"{latitude},{longitude}",
+                "radius": 1000,  # 1km radius
+                "key": self.google_places_api_key
+            }
+            
+            search_response = requests.get(search_url, params=search_params, timeout=5)
+            
+            if search_response.status_code == 200:
+                search_data = search_response.json()
+                results = search_data.get("results", [])
+                
+                if results:
+                    # Get the most relevant place (first result)
+                    place_id = results[0].get("place_id")
+                    
+                    if place_id:
+                        # Step 2: Get place details with photo references
+                        details_url = "https://maps.googleapis.com/maps/api/place/details/json"
+                        details_params = {
+                            "place_id": place_id,
+                            "fields": "photos",
+                            "key": self.google_places_api_key
+                        }
+                        
+                        details_response = requests.get(details_url, params=details_params, timeout=5)
+                        
+                        if details_response.status_code == 200:
+                            details_data = details_response.json()
+                            result = details_data.get("result", {})
+                            photos = result.get("photos", [])
+                            
+                            if photos:
+                                # Step 3: Construct the photo URL
+                                photo_reference = photos[0].get("photo_reference")
+                                if photo_reference:
+                                    photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference={photo_reference}&key={self.google_places_api_key}"
+                                    self.google_places_calls += 2  # Search + details call
+                                    return photo_url
+            
+        except Exception as e:
+            print(f"Google Places API error: {e}")
         
         return None
     
@@ -292,11 +355,30 @@ class EnhancedImageService:
         
         return self.unsplash_calls < 50
     
+    def _check_google_places_rate_limit(self) -> bool:
+        """
+        Check Google Places rate limits (100,000 requests/month free tier)
+        """
+        current_time = time.time()
+        
+        # Reset monthly counter (approximate)
+        if current_time - self.last_google_places_reset > 2592000:  # 30 days
+            self.google_places_calls = 0
+            self.last_google_places_reset = current_time
+        
+        return self.google_places_calls < 100000
+    
     def get_api_status(self) -> Dict[str, Any]:
         """
         Get status of all image APIs
         """
         return {
+            "google_places": {
+                "configured": bool(self.google_places_api_key),
+                "calls_this_month": self.google_places_calls,
+                "rate_limit": 100000,
+                "period": "monthly"
+            },
             "foursquare": {
                 "configured": bool(self.foursquare_api_key),
                 "calls_today": self.foursquare_calls,

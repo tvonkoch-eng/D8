@@ -58,9 +58,6 @@ struct CuisineOptionView: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 8) {
-                Text(cuisine.emoji)
-                    .font(.system(size: 30))
-                
                 Text(cuisine.displayName)
                     .font(.caption)
                     .fontWeight(.medium)
@@ -70,12 +67,12 @@ struct CuisineOptionView: View {
             .frame(height: 100)
             .frame(maxWidth: .infinity)
             .background(
-                Circle()
+                Rectangle()
                     .fill(Color.white)
                     .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
             )
             .overlay(
-                Circle()
+                Rectangle()
                     .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 3)
             )
         }

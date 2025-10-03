@@ -184,12 +184,14 @@ struct ExploreIdea: Codable, Identifiable {
     let isOpen: Bool
     let openHours: String
     let imageURL: String?
+    let websiteURL: String?
+    let menuURL: String?
     
     enum CodingKeys: String, CodingKey {
         case name, description, location, address, latitude, longitude
         case category, cuisineType, activityType, priceLevel, rating
         case whyRecommended, estimatedCost, bestTime, duration
-        case isOpen, openHours, imageURL
+        case isOpen, openHours, imageURL, websiteURL, menuURL
     }
 }
 

@@ -9,12 +9,19 @@ import Foundation
 import CoreLocation
 
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    static let shared = LocationManager()
+    
     private let locationManager = CLLocationManager()
     private var permissionCallback: ((Bool) -> Void)?
     private var locationCallback: ((CLLocationCoordinate2D?) -> Void)?
     
     @Published var currentLocation: CLLocationCoordinate2D?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    
+    // Cache location to avoid repeated API calls
+    private var cachedLocation: CLLocationCoordinate2D?
+    private var lastLocationUpdate: Date?
+    private let locationCacheTimeout: TimeInterval = 300 // 5 minutes
     
     override init() {
         super.init()
@@ -60,6 +67,14 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func getCurrentLocation(completion: @escaping (CLLocationCoordinate2D?) -> Void) {
+        // Check if we have a cached location that's still valid
+        if let cached = cachedLocation,
+           let lastUpdate = lastLocationUpdate,
+           Date().timeIntervalSince(lastUpdate) < locationCacheTimeout {
+            completion(cached)
+            return
+        }
+        
         locationCallback = completion
         
         // Check authorization status first (this is safe on main thread)
@@ -85,7 +100,6 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // Add timeout mechanism - increased to 15 seconds for better reliability
         DispatchQueue.main.asyncAfter(deadline: .now() + 15.0) {
             if self.locationCallback != nil {
-                print("Location request timed out after 15 seconds")
                 self.locationCallback?(nil)
                 self.locationCallback = nil
             }
@@ -110,13 +124,16 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             return 
         }
         
+        // Cache the location to avoid repeated API calls
+        cachedLocation = location.coordinate
+        lastLocationUpdate = Date()
+        
         currentLocation = location.coordinate
         locationCallback?(location.coordinate)
         locationCallback = nil
     }
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Location error: \(error.localizedDescription)")
         locationCallback?(nil)
         locationCallback = nil
     }

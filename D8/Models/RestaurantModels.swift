@@ -27,6 +27,8 @@ struct RestaurantRecommendation: Identifiable, Codable {
     let bestTime: String
     let duration: String?
     let imageURL: String?
+    let websiteURL: String?
+    let menuURL: String?
     
     // Add feedback tracking
     var userRating: Double? = nil
@@ -47,6 +49,8 @@ struct RestaurantRecommendation: Identifiable, Codable {
         case bestTime = "best_time"
         case duration
         case imageURL = "image_url"
+        case websiteURL = "website_url"
+        case menuURL = "menu_url"
     }
     
     // Computed properties for UI
@@ -335,7 +339,9 @@ class RestaurantService: ObservableObject {
                             estimatedCost: recommendation.estimatedCost,
                             bestTime: recommendation.bestTime,
                             duration: recommendation.duration,
-                            imageURL: self.generateImageURL(for: recommendation.cuisineType, name: recommendation.name)
+                            imageURL: self.generateImageURL(for: recommendation.cuisineType, name: recommendation.name),
+                            websiteURL: recommendation.websiteURL,
+                            menuURL: recommendation.menuURL
                         )
                     }
                     return updatedRecommendation

@@ -110,7 +110,7 @@ struct ResultsPlaceholderView: View {
                         PreferenceCapsule(
                             title: "Cuisine",
                             value: cuisine.displayName,
-                            icon: cuisine.emoji
+                            icon: ""
                         )
                     }
                 }

@@ -344,30 +344,11 @@ struct RestaurantCardView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header with title and location
-            VStack(alignment: .leading, spacing: 8) {
-                // Title
-                Text(recommendation.name)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                
-                // Location with map pin (clickable)
-                Button(action: {
-                    openInAppleMaps()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "mappin")
-                            .font(.system(size: 12))
-                            .foregroundColor(.red)
-                        Text(recommendation.subtitle)
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
+            // Title
+            Text(recommendation.name)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.primary)
+                .lineLimit(2)
             
             // Description
             Text(recommendation.description)
@@ -375,86 +356,79 @@ struct RestaurantCardView: View {
                 .foregroundColor(.primary)
                 .lineLimit(3)
             
-            // Activity attributes (pills)
+            // Location with map pin (clickable) - moved below description
+            Button(action: {
+                openInAppleMaps()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "mappin")
+                        .font(.system(size: 12))
+                        .foregroundColor(.red)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recommendation.address)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        
+                        if let distance = distance {
+                            Text(formatDistance(distance))
+                                .font(.system(size: 11))
+                                .foregroundColor(.blue)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Text("open")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.blue.opacity(0.1))
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Tags and Links Menu
             HStack(spacing: 8) {
-                // Duration
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 12))
-                        .foregroundColor(.green)
-                    Text(activityDuration)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Color.green.opacity(0.1))
-                )
+                TagView(text: formatCuisineType(recommendation.cuisineType), color: .seaweedGreen)
                 
-                // Intensity
-                HStack(spacing: 4) {
-                    Image(systemName: "star")
-                        .font(.system(size: 12))
-                        .foregroundColor(.orange)
-                    Text(activityIntensity)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Color.orange.opacity(0.1))
-                )
+                TagView(text: formatPriceLevel(recommendation.priceLevel), color: .seaweedGreen)
                 
-                // Vibe
-                HStack(spacing: 4) {
-                    Text(activityVibeIcon)
-                        .font(.system(size: 12))
-                    Text(activityVibe)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
+                if let duration = recommendation.duration {
+                    TagView(text: duration, color: .seaweedGreen)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Color.purple.opacity(0.1))
-                )
                 
                 Spacer()
             }
             
-            // Rating and Price on same line
-            HStack {
-                // Rating display
-                HStack(spacing: 4) {
-                    HStack(spacing: 2) {
-                        ForEach(0..<5) { index in
-                            Image(systemName: index < Int(recommendation.rating) ? "star.fill" : "star")
-                                .font(.system(size: 14))
-                                .foregroundColor(.yellow)
-                        }
+            // Rating display
+            HStack(spacing: 4) {
+                HStack(spacing: 2) {
+                    ForEach(0..<5) { index in
+                        Image(systemName: index < Int(recommendation.rating) ? "star.fill" : "star")
+                            .font(.system(size: 14))
+                            .foregroundColor(.yellow)
                     }
-                    Text("\(String(format: "%.1f", recommendation.rating)) (\(Int.random(in: 100...5000)))")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.primary)
                 }
+                Text(String(format: "%.1f", recommendation.rating))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.primary)
+                
+                Text("(\(generateReviewCount()))")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
                 
                 Spacer()
-                
-                // Price display
-                Text(simplifiedPrice)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(Color.seaweedGreenGradient)
-                    )
             }
             
             // Action buttons
@@ -492,7 +466,7 @@ struct RestaurantCardView: View {
                 
                 Spacer()
                 
-                // Select button
+                // Select button with Links overlay
                 Button(action: {
                     // Handle selection
                     print("Selected: \(recommendation.name)")
@@ -507,6 +481,42 @@ struct RestaurantCardView: View {
                                 .fill(Color.seaweedGreenGradient)
                         )
                 }
+                .overlay(
+                    // Links Menu Button - Circular overlay
+                    Group {
+                        if recommendation.websiteURL != nil || recommendation.menuURL != nil {
+                            Menu {
+                                if let websiteURL = recommendation.websiteURL, let url = URL(string: websiteURL) {
+                                    Button(action: {
+                                        UIApplication.shared.open(url)
+                                    }) {
+                                        Label("Restaurant Website", systemImage: "safari")
+                                    }
+                                }
+                                
+                                if let menuURL = recommendation.menuURL, let url = URL(string: menuURL) {
+                                    Button(action: {
+                                        UIApplication.shared.open(url)
+                                    }) {
+                                        Label("View Menu", systemImage: "doc.text")
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "menucard")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.black)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        Circle()
+                                            .fill(Color.seaweedGreen.opacity(0.1))
+                                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                                    )
+                            }
+                            .offset(x: -6, y: -50) // Offset to the right and up
+                        }
+                    },
+                    alignment: .topTrailing
+                )
             }
         }
         .padding(20)
@@ -550,11 +560,20 @@ struct RestaurantCardView: View {
     }
     
     private func openInAppleMaps() {
-        let encodedAddress = recommendation.address.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let mapsURL = "https://maps.apple.com/?q=\(encodedAddress)"
+        // Use restaurant name for searching instead of exact address
+        let searchQuery = recommendation.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let mapsURL = "http://maps.apple.com/?q=\(searchQuery)"
         
         if let url = URL(string: mapsURL) {
             UIApplication.shared.open(url)
+        }
+    }
+    
+    private func formatDistance(_ distance: Double) -> String {
+        if distance < 1.0 {
+            return String(format: "%.1f mi", distance)
+        } else {
+            return String(format: "%.0f mi", distance)
         }
     }
     
@@ -662,13 +681,70 @@ struct RestaurantCardView: View {
         }
     }
     
-    private var activityVibeIcon: String {
-        switch activityVibe {
-        case "Romantic": return "💕"
-        case "Adventure": return "🏔️"
-        case "Cultural": return "🎨"
-        case "Fun": return "🎭"
-        default: return "😊"
+    private func formatCuisineType(_ cuisineType: String) -> String {
+        // Split by common delimiters and clean up
+        let cuisines = cuisineType.components(separatedBy: CharacterSet(charactersIn: ",;&|"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        
+        if cuisines.count <= 1 {
+            return cuisineType
+        } else {
+            let additionalCount = cuisines.count - 1
+            return "\(cuisines[0]) +\(additionalCount)"
         }
     }
+    
+    private func formatPriceLevel(_ priceLevel: String) -> String {
+        let level = priceLevel.lowercased()
+        
+        switch level {
+        case "low", "budget", "cheap":
+            return "$"
+        case "medium", "moderate", "mid":
+            return "$$"
+        case "high", "expensive", "upscale":
+            return "$$$"
+        case "very high", "luxury", "fine dining":
+            return "$$$$"
+        default:
+            // Try to extract dollar signs or numbers
+            if level.contains("$") {
+                return level.uppercased()
+            } else if let range = level.range(of: #"\d+"#, options: .regularExpression) {
+                let number = String(level[range])
+                if let num = Int(number) {
+                    return String(repeating: "$", count: min(num, 4))
+                }
+            }
+            return "$$" // Default fallback
+        }
+    }
+    
+    private func generateReviewCount() -> String {
+        // Generate deterministic review counts based on restaurant name and rating
+        let hash = recommendation.name.hashValue
+        let baseCount: Int
+        
+        switch recommendation.rating {
+        case 4.5...5.0:
+            baseCount = 200 + (abs(hash) % 1800) // 200-2000
+        case 4.0..<4.5:
+            baseCount = 100 + (abs(hash) % 1400) // 100-1500
+        case 3.5..<4.0:
+            baseCount = 50 + (abs(hash) % 750) // 50-800
+        case 3.0..<3.5:
+            baseCount = 20 + (abs(hash) % 380) // 20-400
+        default:
+            baseCount = 10 + (abs(hash) % 190) // 10-200
+        }
+        
+        // Format with K for thousands
+        if baseCount >= 1000 {
+            return "\(baseCount / 1000)K+"
+        } else {
+            return "\(baseCount)+"
+        }
+    }
+    
 }
