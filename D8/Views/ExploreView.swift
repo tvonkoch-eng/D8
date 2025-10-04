@@ -306,17 +306,6 @@ struct ExploreView: View {
                         }
                     }
                 }
-                
-                // Refresh button
-                Button("Refresh Ideas") {
-                    exploreService.refreshExploreIdeas { result in
-                        // Service handles updating its own properties
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
             }
         }
     }
@@ -355,6 +344,41 @@ struct ExploreIdeaCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: isHorizontal ? 16 : 16) {
+            
+            // Restaurant/Activity Image
+            if !idea.imageURL.isEmpty {
+                AsyncImage(url: URL(string: idea.imageURL)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .overlay(
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                        )
+                }
+                .frame(height: isHorizontal ? 120 : 150)
+                .clipped()
+                .cornerRadius(12)
+            } else {
+                // Placeholder when no image
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(height: isHorizontal ? 120 : 150)
+                    .cornerRadius(12)
+                    .overlay(
+                        VStack {
+                            Image(systemName: idea.category == "restaurant" ? "fork.knife" : "figure.run")
+                                .font(.system(size: 30))
+                                .foregroundColor(.gray)
+                            Text("No Image")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    )
+            }
             
             // Title and description
             VStack(alignment: .leading, spacing: isHorizontal ? 8 : 8) {

@@ -617,14 +617,23 @@ class ExploreService: ObservableObject {
         
         // Convert backend recommendations to explore ideas
         for recommendation in recommendations {
+            print("🔄 [ExploreService] Processing recommendation: \(recommendation.name)")
+            print("📸 [ExploreService] Original imageURL: \(recommendation.imageURL ?? "nil")")
+            
             // Try to get Google Places image first, then fallback to existing image
             var imageURL = recommendation.imageURL ?? ""
             
             if imageURL.isEmpty {
+                print("🔍 [ExploreService] No image URL, trying Google Places API...")
                 // Try Google Places API for restaurant images
                 if let placesImageURL = await imageService.getImageURL(for: recommendation) {
                     imageURL = placesImageURL
+                    print("✅ [ExploreService] Got Google Places image: \(placesImageURL)")
+                } else {
+                    print("❌ [ExploreService] Failed to get Google Places image")
                 }
+            } else {
+                print("✅ [ExploreService] Using existing image URL: \(imageURL)")
             }
             
             let idea = ExploreIdea(
