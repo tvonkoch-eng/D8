@@ -346,8 +346,8 @@ struct ExploreIdeaCard: View {
         VStack(alignment: .leading, spacing: isHorizontal ? 16 : 16) {
             
             // Restaurant/Activity Image
-            if !idea.imageURL.isEmpty {
-                AsyncImage(url: URL(string: idea.imageURL)) { image in
+            if let imageURL = idea.imageURL, !imageURL.isEmpty {
+                AsyncImage(url: URL(string: imageURL)) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
