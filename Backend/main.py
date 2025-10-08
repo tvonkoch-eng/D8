@@ -10,7 +10,15 @@ import random
 import re
 from image_service import image_service
 
-app = FastAPI(title="D8 Backend API", version="2.0.1")
+# Environment configuration
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+DEBUG_MODE = ENVIRONMENT == "development"
+
+app = FastAPI(
+    title="D8 Backend API", 
+    version="2.0.1",
+    debug=DEBUG_MODE
+)
 
 # Configure OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -155,7 +163,13 @@ def reverse_geocode(latitude: float, longitude: float) -> str:
 
 @app.get("/")
 def root():
-    return {"message": "D8 Backend API v2.1 - OpenAI Powered with Explore"}
+    environment_info = f"Environment: {ENVIRONMENT}" if DEBUG_MODE else ""
+    return {
+        "message": f"D8 Backend API v2.1 - OpenAI Powered with Explore",
+        "environment": ENVIRONMENT,
+        "debug_mode": DEBUG_MODE,
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.get("/health")
 def health_check():
