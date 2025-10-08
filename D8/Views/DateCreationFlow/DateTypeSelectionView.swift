@@ -14,17 +14,17 @@ struct DateTypeSelectionView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Title with gradient - positioned higher
+            // Compact title
             Text("What type of date?")
-                .font(.system(size: 32, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(Color.seaweedGreenGradient)
                 .multilineTextAlignment(.center)
-                .padding(.top, 40)
-                .padding(.bottom, 40)
-                .frame(maxWidth: .infinity) // Ensure title takes full width
+                .padding(.top, 20)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity)
             
-            // Two cards vertically stacked
-            VStack(spacing: 20) {
+            // Compact cards
+            VStack(spacing: 12) {
                 ForEach(dateTypes, id: \.self) { dateType in
                     DateTypeOptionView(
                         dateType: dateType,
@@ -34,10 +34,10 @@ struct DateTypeSelectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 40)
-            .frame(maxWidth: .infinity) // Ensure consistent width
+            .padding(.horizontal, 0)
+            .frame(maxWidth: .infinity)
             
-            Spacer(minLength: 100)
+            Spacer(minLength: 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
@@ -52,27 +52,27 @@ struct DateTypeOptionView: View {
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 20) {
-                // Icon based on date type
+            HStack(spacing: 16) {
+                // Compact icon
                 if dateType == .meal {
-                    Text("")
-                        .font(.system(size: 40))
+                    Text("🍽️")
+                        .font(.system(size: 28))
                 } else {
                     Image(systemName: dateType.icon)
-                        .font(.system(size: 40, weight: .medium))
+                        .font(.system(size: 28, weight: .medium))
                         .foregroundColor(.seaweedGreen)
                 }
                 
-                // Text content
-                VStack(alignment: .leading, spacing: 8) {
+                // Compact text content
+                VStack(alignment: .leading, spacing: 4) {
                     // Display name
                     Text(dateType.displayName)
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.primary)
                     
                     // Description
                     Text(dateType.description)
-                        .font(.system(size: 16))
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
@@ -80,17 +80,17 @@ struct DateTypeOptionView: View {
                 
                 Spacer()
             }
-            .frame(height: 100)
+            .frame(height: 80)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .background(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: 16)
                     .fill(Color.white)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                    .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: isSelected ? 3 : 0)
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: isSelected ? 2 : 0)
             )
         }
         .buttonStyle(PlainButtonStyle())

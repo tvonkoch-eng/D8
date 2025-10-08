@@ -15,6 +15,7 @@ class ExploreService: ObservableObject {
     private let firebaseService = FirebaseService.shared
     private let locationManager = LocationManager()
     private let imageService = ImageService.shared
+    private let restaurantDatabaseService = RestaurantDatabaseService.shared
     
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -35,8 +36,11 @@ class ExploreService: ObservableObject {
     // MARK: - Public Methods
     
     func getExploreIdeas(completion: @escaping (Result<[ExploreIdea], Error>) -> Void) {
-        // If we already have ideas loaded, return them immediately
-        if !ideas.isEmpty {
+        // Check if we have cached data for today's date
+        let today = formatDateForBackend(Date())
+        
+        // If we already have ideas loaded for today, return them immediately
+        if !ideas.isEmpty && lastKnownDate == today {
             completion(.success(ideas))
             return
         }
@@ -46,7 +50,7 @@ class ExploreService: ObservableObject {
         errorMessage = nil
         showLocationPermissionDenied = false
         
-        // ALWAYS check Firebase first - get current location and check Firebase cache
+        // Get current location and check Firebase cache
         locationManager.getCurrentLocation { [weak self] coordinate in
             guard let self = self else { return }
             
@@ -54,7 +58,7 @@ class ExploreService: ObservableObject {
             let finalCoordinate = coordinate ?? CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194) // San Francisco
             
             // Get location name from coordinates
-            self.getLocationName(from: finalCoordinate) { locationName in
+            self.getLocationNameWithRetry(from: finalCoordinate, retryCount: 0) { locationName in
                 // Check if location is unknown - this is an error condition
                 if locationName == "Unknown Location" {
                     DispatchQueue.main.async {
@@ -65,9 +69,7 @@ class ExploreService: ObservableObject {
                     return
                 }
                 
-                let today = self.formatDateForBackend(Date())
-                
-                // Check Firebase cache first
+                // Check Firebase cache first for today's data
                 Task {
                     do {
                         if let existingIdeas = try await self.firebaseService.getExploreIdeas(for: locationName, date: today) {
@@ -75,7 +77,7 @@ class ExploreService: ObservableObject {
                                 self.isLoading = false
                                 self.ideas = existingIdeas.ideas
                                 self.locationName = locationName
-                                // Cache the location for future use
+                                // Cache the location and date for future use
                                 self.lastKnownLocation = locationName
                                 self.lastKnownDate = today
                                 completion(.success(existingIdeas.ideas))
@@ -83,7 +85,7 @@ class ExploreService: ObservableObject {
                             return
                         }
                         
-                        // If no Firebase data found, generate new ideas
+                        // If no Firebase data found for today, generate new ideas
                         try await self.generateAndSaveExploreIdeas(for: locationName, date: today, coordinate: finalCoordinate) { result in
                             DispatchQueue.main.async {
                                 self.isLoading = false
@@ -91,7 +93,7 @@ class ExploreService: ObservableObject {
                                 case .success(let newIdeas):
                                     self.ideas = newIdeas
                                     self.locationName = locationName
-                                    // Cache the location for future use
+                                    // Cache the location and date for future use
                                     self.lastKnownLocation = locationName
                                     self.lastKnownDate = today
                                 case .failure(let error):
@@ -109,7 +111,7 @@ class ExploreService: ObservableObject {
                                 case .success(let newIdeas):
                                     self.ideas = newIdeas
                                     self.locationName = locationName
-                                    // Cache the location for future use
+                                    // Cache the location and date for future use
                                     self.lastKnownLocation = locationName
                                     self.lastKnownDate = today
                                 case .failure(let error):
@@ -125,11 +127,16 @@ class ExploreService: ObservableObject {
     }
     
     func refreshExploreIdeas(completion: @escaping (Result<[ExploreIdea], Error>) -> Void) {
-        // Clear existing data and reload
-        ideas = []
-        locationName = "Loading location..."
-        errorMessage = nil
-        showLocationPermissionDenied = false
+        let today = formatDateForBackend(Date())
+        
+        // Only clear cache if we're refreshing for a new day
+        if lastKnownDate != today {
+            // Clear existing data for new day
+            ideas = []
+            locationName = "Loading location..."
+            errorMessage = nil
+            showLocationPermissionDenied = false
+        }
         
         // Force fresh data by skipping Firebase cache
         startParallelLocationAndFirebaseCheck(completion: completion)
@@ -168,9 +175,24 @@ class ExploreService: ObservableObject {
     }
     
     func shouldRefreshForNewDay() -> Bool {
-        // For now, always return false to avoid unnecessary refreshes
-        // In the future, this could check if the cached data is from a different day
-        return false
+        let today = formatDateForBackend(Date())
+        return lastKnownDate != today
+    }
+    
+    func hasCachedDataForToday() -> Bool {
+        let today = formatDateForBackend(Date())
+        return !ideas.isEmpty && lastKnownDate == today
+    }
+    
+    func getCachedLocationAndDate() -> (location: String?, date: String?) {
+        return (lastKnownLocation, lastKnownDate)
+    }
+    
+    // MARK: - Debug Methods
+    
+    func testImageService() async {
+        print("🧪 [ExploreService] Testing ImageService...")
+        await imageService.testGooglePlacesAPI()
     }
     
     // MARK: - Private Methods
@@ -368,6 +390,19 @@ class ExploreService: ObservableObject {
         }
     }
     
+    private func getLocationNameWithRetry(from coordinate: CLLocationCoordinate2D, retryCount: Int, completion: @escaping (String) -> Void) {
+        getLocationName(from: coordinate) { locationName in
+            if locationName == "Unknown Location" && retryCount < 2 {
+                // Retry with a delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.getLocationNameWithRetry(from: coordinate, retryCount: retryCount + 1, completion: completion)
+                }
+            } else {
+                completion(locationName)
+            }
+        }
+    }
+    
     private func getLocationName(from coordinate: CLLocationCoordinate2D, completion: @escaping (String) -> Void) {
         // Check cache first to avoid repeated geocoding
         let coordinateKey = "\(coordinate.latitude),\(coordinate.longitude)"
@@ -392,7 +427,8 @@ class ExploreService: ObservableObject {
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 print("Geocoding error: \(error)")
-                completion("Unknown Location")
+                // Try a different geocoding service as fallback
+                self.tryAlternativeGeocoding(coordinate: coordinate, completion: completion)
                 return
             }
             
@@ -448,6 +484,46 @@ class ExploreService: ObservableObject {
         }.resume()
     }
     
+    private func tryAlternativeGeocoding(coordinate: CLLocationCoordinate2D, completion: @escaping (String) -> Void) {
+        // Try using Apple's reverse geocoding as fallback
+        let geocoder = CLGeocoder()
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        
+        geocoder.reverseGeocodeLocation(location) { placemarks, error in
+            if let error = error {
+                print("Apple geocoding error: \(error)")
+                completion("Unknown Location")
+                return
+            }
+            
+            guard let placemark = placemarks?.first else {
+                completion("Unknown Location")
+                return
+            }
+            
+            let city = placemark.locality ?? placemark.administrativeArea
+            let state = placemark.administrativeArea
+            let country = placemark.country
+            
+            let locationName: String
+            if let city = city, let state = state {
+                locationName = "\(city), \(state)"
+            } else if let city = city, let country = country {
+                locationName = "\(city), \(country)"
+            } else if let city = city {
+                locationName = city
+            } else if let state = state, let country = country {
+                locationName = "\(state), \(country)"
+            } else {
+                locationName = "Unknown Location"
+            }
+            
+            DispatchQueue.main.async {
+                completion(locationName)
+            }
+        }
+    }
+    
     private func generateAndSaveExploreIdeas(for location: String, date: String, coordinate: CLLocationCoordinate2D, completion: @escaping (Result<[ExploreIdea], Error>) -> Void) async throws {
         // Clean up expired ideas first
         try await firebaseService.cleanupExpiredIdeas()
@@ -467,11 +543,9 @@ class ExploreService: ObservableObject {
             // Use RestaurantService to get real restaurant data instead of fake AI data
             backendService.getRestaurantRecommendations(
                 dateType: .meal, // Use meal type to get restaurants
-                mealTimes: [.dinner], // Get dinner recommendations
+                mealTimes: Set([.dinner]), // Get dinner recommendations
                 priceRange: .medium, // Use medium price range for variety
-                cuisines: [], // No specific cuisine filter for variety
-                activityTypes: nil,
-                activityIntensity: nil,
+                cuisines: Set<Cuisine>(), // No specific cuisine filter for variety
                 date: Date(), // Use current date
                 location: location,
                 coordinate: coordinate
@@ -489,8 +563,10 @@ class ExploreService: ObservableObject {
                         continuation.resume(throwing: error)
                     } else {
                         // Use fallback ideas when backend is unavailable for other reasons
-                        let fallbackIdeas = self.generateFallbackIdeas(for: location, userCoordinate: coordinate)
-                        continuation.resume(returning: fallbackIdeas)
+                        Task {
+                            let fallbackIdeas = await self.generateFallbackIdeas(for: location, userCoordinate: coordinate)
+                            continuation.resume(returning: fallbackIdeas)
+                        }
                     }
                 }
             }
@@ -615,6 +691,14 @@ class ExploreService: ObservableObject {
     private func convertRealRestaurantsToExploreIdeas(recommendations: [RestaurantRecommendation]) async -> [ExploreIdea] {
         var ideas: [ExploreIdea] = []
         
+        // Save all restaurants to database first
+        do {
+            try await restaurantDatabaseService.saveRestaurants(recommendations)
+            print("✅ [ExploreService] Saved \(recommendations.count) restaurants to database")
+        } catch {
+            print("❌ [ExploreService] Failed to save restaurants to database: \(error.localizedDescription)")
+        }
+        
         // Convert backend recommendations to explore ideas
         for recommendation in recommendations {
             print("🔄 [ExploreService] Processing recommendation: \(recommendation.name)")
@@ -674,44 +758,63 @@ class ExploreService: ObservableObject {
     private func getActivityRecommendations(location: String, coordinate: CLLocationCoordinate2D, completion: @escaping ([ExploreIdea]) -> Void) {
         backendService.getRestaurantRecommendations(
             dateType: .activity,
-            mealTimes: nil,
+            mealTimes: Set<MealTime>(),
             priceRange: .medium,
-            cuisines: nil,
-            activityTypes: [.outdoor, .entertainment],
-            activityIntensity: .medium,
+            cuisines: Set<Cuisine>(),
             date: Date(),
             location: location,
             coordinate: coordinate
         ) { result in
             switch result {
             case .success(let recommendations):
-                var activityIdeas: [ExploreIdea] = []
-                for recommendation in recommendations {
-                    let idea = ExploreIdea(
-                        name: recommendation.name,
-                        description: recommendation.description,
-                        location: recommendation.location,
-                        address: recommendation.address,
-                        latitude: recommendation.latitude,
-                        longitude: recommendation.longitude,
-                        category: "activity",
-                        cuisineType: nil,
-                        activityType: recommendation.cuisineType, // Use cuisineType as activity type for activities
-                        priceLevel: recommendation.priceLevel,
-                        rating: recommendation.rating,
-                        whyRecommended: recommendation.whyRecommended,
-                        estimatedCost: recommendation.estimatedCost,
-                        bestTime: recommendation.bestTime,
-                        duration: recommendation.duration ?? "2-3 hours",
-                        isOpen: recommendation.isOpen,
-                        openHours: recommendation.openHours,
-                        imageURL: recommendation.imageURL ?? "",
-                        websiteURL: recommendation.websiteURL,
-                        menuURL: recommendation.menuURL
-                    )
-                    activityIdeas.append(idea)
+                Task {
+                    var activityIdeas: [ExploreIdea] = []
+                    for recommendation in recommendations {
+                        print("🔄 [ExploreService] Processing activity recommendation: \(recommendation.name)")
+                        print("📸 [ExploreService] Original activity imageURL: \(recommendation.imageURL ?? "nil")")
+                        
+                        // Try to get Google Places image first, then fallback to existing image
+                        var imageURL = recommendation.imageURL ?? ""
+                        
+                        if imageURL.isEmpty {
+                            print("🔍 [ExploreService] No activity image URL, trying Google Places API...")
+                            // Try Google Places API for activity images
+                            if let placesImageURL = await self.imageService.getImageURL(for: recommendation) {
+                                imageURL = placesImageURL
+                                print("✅ [ExploreService] Got Google Places activity image: \(placesImageURL)")
+                            } else {
+                                print("❌ [ExploreService] Failed to get Google Places activity image")
+                            }
+                        } else {
+                            print("✅ [ExploreService] Using existing activity image URL: \(imageURL)")
+                        }
+                        
+                        let idea = ExploreIdea(
+                            name: recommendation.name,
+                            description: recommendation.description,
+                            location: recommendation.location,
+                            address: recommendation.address,
+                            latitude: recommendation.latitude,
+                            longitude: recommendation.longitude,
+                            category: "activity",
+                            cuisineType: nil,
+                            activityType: recommendation.cuisineType, // Use cuisineType as activity type for activities
+                            priceLevel: recommendation.priceLevel,
+                            rating: recommendation.rating,
+                            whyRecommended: recommendation.whyRecommended,
+                            estimatedCost: recommendation.estimatedCost,
+                            bestTime: recommendation.bestTime,
+                            duration: recommendation.duration ?? "2-3 hours",
+                            isOpen: recommendation.isOpen,
+                            openHours: recommendation.openHours,
+                            imageURL: imageURL,
+                            websiteURL: recommendation.websiteURL,
+                            menuURL: recommendation.menuURL
+                        )
+                        activityIdeas.append(idea)
+                    }
+                    completion(activityIdeas)
                 }
-                completion(activityIdeas)
             case .failure(_):
                 completion([])
             }
@@ -775,7 +878,7 @@ class ExploreService: ObservableObject {
             finalIdeas.append(contentsOf: restaurantIdeas)
             // Add placeholder restaurants if needed
             for i in restaurantIdeas.count..<2 {
-                let placeholder = createPlaceholderRestaurant(index: i)
+                let placeholder = await createPlaceholderRestaurant(index: i)
                 finalIdeas.append(placeholder)
             }
         }
@@ -788,7 +891,7 @@ class ExploreService: ObservableObject {
             finalIdeas.append(contentsOf: activityIdeas)
             // Add placeholder activities if needed
             for i in activityIdeas.count..<2 {
-                let placeholder = createPlaceholderActivity(index: i)
+                let placeholder = await createPlaceholderActivity(index: i)
                 finalIdeas.append(placeholder)
             }
         }
@@ -797,7 +900,7 @@ class ExploreService: ObservableObject {
         return finalIdeas.shuffled()
     }
     
-    private func createPlaceholderRestaurant(index: Int) -> ExploreIdea {
+    private func createPlaceholderRestaurant(index: Int) async -> ExploreIdea {
         let placeholders = [
             ("Local Bistro", "A cozy neighborhood restaurant with fresh, locally-sourced ingredients and a warm atmosphere perfect for intimate conversations."),
             ("Garden Cafe", "An elegant dining spot featuring seasonal menu items and a beautiful outdoor seating area ideal for romantic dinners."),
@@ -806,6 +909,36 @@ class ExploreService: ObservableObject {
         ]
         
         let placeholder = placeholders[index % placeholders.count]
+        
+        let tempRecommendation = RestaurantRecommendation(
+            name: placeholder.0,
+            description: placeholder.1,
+            location: "Local Area",
+            address: "Downtown Area",
+            latitude: 0.0,
+            longitude: 0.0,
+            cuisineType: "American",
+            priceLevel: "Moderate",
+            isOpen: true,
+            openHours: "5:00 PM - 10:00 PM",
+            rating: 4.2,
+            whyRecommended: "Great atmosphere for dates",
+            estimatedCost: "$25-40",
+            bestTime: "Evening",
+            duration: "1-2 hours",
+            imageURL: nil,
+            websiteURL: nil,
+            menuURL: nil
+        )
+        
+        // Try to get image for placeholder restaurant
+        var imageURL = ""
+        if let placesImageURL = await imageService.getImageURL(for: tempRecommendation) {
+            imageURL = placesImageURL
+            print("✅ [ExploreService] Got placeholder restaurant image: \(placesImageURL)")
+        } else {
+            print("❌ [ExploreService] No placeholder restaurant image available")
+        }
         
         return ExploreIdea(
             name: placeholder.0,
@@ -825,13 +958,13 @@ class ExploreService: ObservableObject {
             duration: "1-2 hours",
             isOpen: true,
             openHours: "5:00 PM - 10:00 PM",
-            imageURL: "",
+            imageURL: imageURL,
             websiteURL: nil,
             menuURL: nil
         )
     }
     
-    private func createPlaceholderActivity(index: Int) -> ExploreIdea {
+    private func createPlaceholderActivity(index: Int) async -> ExploreIdea {
         let placeholders = [
             ("Art Gallery Walk", "Explore local art galleries and cultural spaces, perfect for discovering new artists and having meaningful conversations about creativity and expression."),
             ("Scenic Hiking Trail", "A beautiful nature trail with stunning views, ideal for outdoor enthusiasts who enjoy peaceful walks and connecting with nature."),
@@ -840,6 +973,36 @@ class ExploreService: ObservableObject {
         ]
         
         let placeholder = placeholders[index % placeholders.count]
+        
+        let tempRecommendation = RestaurantRecommendation(
+            name: placeholder.0,
+            description: placeholder.1,
+            location: "Local Area",
+            address: "Entertainment District",
+            latitude: 0.0,
+            longitude: 0.0,
+            cuisineType: "entertainment",
+            priceLevel: "Moderate",
+            isOpen: true,
+            openHours: "10:00 AM - 8:00 PM",
+            rating: 4.0,
+            whyRecommended: "Great for bonding and conversation",
+            estimatedCost: "$15-30",
+            bestTime: "Afternoon/Evening",
+            duration: "2-3 hours",
+            imageURL: nil,
+            websiteURL: nil,
+            menuURL: nil
+        )
+        
+        // Try to get image for placeholder activity
+        var imageURL = ""
+        if let placesImageURL = await imageService.getImageURL(for: tempRecommendation) {
+            imageURL = placesImageURL
+            print("✅ [ExploreService] Got placeholder activity image: \(placesImageURL)")
+        } else {
+            print("❌ [ExploreService] No placeholder activity image available")
+        }
         
         return ExploreIdea(
             name: placeholder.0,
@@ -859,13 +1022,13 @@ class ExploreService: ObservableObject {
             duration: "2-3 hours",
             isOpen: true,
             openHours: "10:00 AM - 8:00 PM",
-            imageURL: "",
+            imageURL: imageURL,
             websiteURL: nil,
             menuURL: nil
         )
     }
     
-    private func generateFallbackIdeas(for location: String, userCoordinate: CLLocationCoordinate2D) -> [ExploreIdea] {
+    private func generateFallbackIdeas(for location: String, userCoordinate: CLLocationCoordinate2D) async -> [ExploreIdea] {
         var ideas: [ExploreIdea] = []
         
         // Use the user's actual location coordinates for fallback
@@ -881,6 +1044,36 @@ class ExploreService: ObservableObject {
         ]
         
         for (index, restaurant) in restaurantIdeas.enumerated() {
+            let tempRecommendation = RestaurantRecommendation(
+                name: restaurant.0,
+                description: restaurant.1,
+                location: location,
+                address: "Downtown \(location)",
+                latitude: baseLatitude + Double.random(in: -0.01...0.01),
+                longitude: baseLongitude + Double.random(in: -0.01...0.01),
+                cuisineType: restaurant.2,
+                priceLevel: restaurant.3,
+                isOpen: true,
+                openHours: "5:00 PM - 10:00 PM",
+                rating: Double.random(in: 3.8...4.8),
+                whyRecommended: "Great atmosphere for dates",
+                estimatedCost: restaurant.3 == "Budget" ? "$15-25" : restaurant.3 == "Moderate" ? "$25-40" : "$40-60",
+                bestTime: "Evening",
+                duration: "1-2 hours",
+                imageURL: nil,
+                websiteURL: nil,
+                menuURL: nil
+            )
+            
+            // Try to get image for fallback restaurant
+            var imageURL = ""
+            if let placesImageURL = await imageService.getImageURL(for: tempRecommendation) {
+                imageURL = placesImageURL
+                print("✅ [ExploreService] Got fallback restaurant image: \(placesImageURL)")
+            } else {
+                print("❌ [ExploreService] No fallback restaurant image available")
+            }
+            
             let idea = ExploreIdea(
                 name: restaurant.0,
                 description: restaurant.1,
@@ -899,7 +1092,7 @@ class ExploreService: ObservableObject {
                 duration: "1-2 hours",
                 isOpen: true,
                 openHours: "5:00 PM - 10:00 PM",
-                imageURL: "",
+                imageURL: imageURL,
                 websiteURL: nil,
                 menuURL: nil
             )
@@ -915,6 +1108,36 @@ class ExploreService: ObservableObject {
         ]
         
         for (index, activity) in activityIdeas.enumerated() {
+            let tempRecommendation = RestaurantRecommendation(
+                name: activity.0,
+                description: activity.1,
+                location: location,
+                address: "Entertainment District, \(location)",
+                latitude: baseLatitude + Double.random(in: -0.01...0.01),
+                longitude: baseLongitude + Double.random(in: -0.01...0.01),
+                cuisineType: activity.2,
+                priceLevel: activity.3,
+                isOpen: true,
+                openHours: "10:00 AM - 8:00 PM",
+                rating: Double.random(in: 3.5...4.5),
+                whyRecommended: "Great for bonding and conversation",
+                estimatedCost: activity.3 == "Budget" ? "$10-20" : "$20-35",
+                bestTime: "Afternoon/Evening",
+                duration: "2-3 hours",
+                imageURL: nil,
+                websiteURL: nil,
+                menuURL: nil
+            )
+            
+            // Try to get image for fallback activity
+            var imageURL = ""
+            if let placesImageURL = await imageService.getImageURL(for: tempRecommendation) {
+                imageURL = placesImageURL
+                print("✅ [ExploreService] Got fallback activity image: \(placesImageURL)")
+            } else {
+                print("❌ [ExploreService] No fallback activity image available")
+            }
+            
             let idea = ExploreIdea(
                 name: activity.0,
                 description: activity.1,
@@ -933,7 +1156,7 @@ class ExploreService: ObservableObject {
                 duration: "2-3 hours",
                 isOpen: true,
                 openHours: "10:00 AM - 8:00 PM",
-                imageURL: "",
+                imageURL: imageURL,
                 websiteURL: nil,
                 menuURL: nil
             )

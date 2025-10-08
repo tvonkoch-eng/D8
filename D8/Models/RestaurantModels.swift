@@ -122,13 +122,10 @@ struct RestaurantRequest: Codable {
     let mealTimes: [String]
     let priceRange: String
     let cuisines: [String]
-    let activityTypes: [String]
-    let activityIntensity: String?
     let date: String
     let location: String
     let latitude: Double?
     let longitude: Double?
-    let page: Int?
     
     // User profile data for personalization
     let userId: String?
@@ -146,9 +143,7 @@ struct RestaurantRequest: Codable {
         case mealTimes = "meal_times"
         case priceRange = "price_range"
         case cuisines
-        case activityTypes = "activity_types"
-        case activityIntensity = "activity_intensity"
-        case date, location, latitude, longitude, page
+        case date, location, latitude, longitude
         case userId = "user_id"
         case userAgeRange = "user_age_range"
         case userRelationshipStatus = "user_relationship_status"
@@ -223,15 +218,12 @@ class RestaurantService: ObservableObject {
     /// Get AI-powered restaurant recommendations
     func getRestaurantRecommendations(
         dateType: DateType,
-        mealTimes: Set<MealTime>?,
+        mealTimes: Set<MealTime>,
         priceRange: PriceRange?,
-        cuisines: Set<Cuisine>?,
-        activityTypes: Set<ActivityType>?,
-        activityIntensity: ActivityIntensity?,
+        cuisines: Set<Cuisine>,
         date: Date,
         location: String,
         coordinate: CLLocationCoordinate2D?,
-        page: Int = 1,
         completion: @escaping (Result<[RestaurantRecommendation], Error>) -> Void
     ) {
         // Get user profile data for personalization
@@ -239,17 +231,13 @@ class RestaurantService: ObservableObject {
         
         let request = RestaurantRequest(
             dateType: mapDateTypeToString(dateType),
-            mealTimes: mealTimes?.map { mapMealTimeToString($0) } ?? [],
+            mealTimes: mealTimes.map { mapMealTimeToString($0) },
             priceRange: priceRange.map { mapPriceRangeToString($0) } ?? "not_sure",
-            cuisines: cuisines?.map { mapCuisineToString($0) } ?? [],
-            activityTypes: activityTypes?.map { mapActivityTypeToString($0) } ?? [],
-            activityIntensity: activityIntensity.map { mapActivityIntensityToString($0) },
+            cuisines: cuisines.map { mapCuisineToString($0) },
             date: formatDateForBackend(date),
             location: location,
             latitude: coordinate?.latitude,
             longitude: coordinate?.longitude,
-            page: page,
-            // User profile data
             userId: userProfile?.userId,
             userAgeRange: userProfile?.ageRange,
             userRelationshipStatus: userProfile?.relationshipStatus,

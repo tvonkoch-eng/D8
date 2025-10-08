@@ -10,6 +10,8 @@ import CoreLocation
 
 struct ExploreView: View {
     @StateObject private var exploreService = ExploreService.shared
+    @State private var isAnimating = false
+    @State private var selectedRestaurant: ExploreIdea?
     
     var body: some View {
         ZStack {
@@ -42,6 +44,16 @@ struct ExploreView: View {
                 loadExploreIdeas()
             }
         }
+        .onChange(of: exploreService.isLoading) { isLoading in
+            if isLoading {
+                isAnimating = true
+            } else {
+                // Keep animation running for a bit longer for smooth transition
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isAnimating = false
+                }
+            }
+        }
     }
     
     // MARK: - Loading View
@@ -60,8 +72,8 @@ struct ExploreView: View {
                         .trim(from: 0, to: 0.7)
                         .stroke(Color.seaweedGreen, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                         .frame(width: 80, height: 80)
-                        .rotationEffect(.degrees(exploreService.isLoading ? 360 : 0))
-                        .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: exploreService.isLoading)
+                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                        .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isAnimating)
                 }
                 
                 VStack(spacing: 8) {
@@ -149,9 +161,7 @@ struct ExploreView: View {
             }
             
             Button("Try Again") {
-                exploreService.refreshExploreIdeas { result in
-                    // Service handles updating its own properties
-                }
+                loadExploreIdeas()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -183,9 +193,7 @@ struct ExploreView: View {
             }
             
             Button("Refresh") {
-                exploreService.refreshExploreIdeas { result in
-                    // Service handles updating its own properties
-                }
+                loadExploreIdeas()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -211,11 +219,11 @@ struct ExploreView: View {
                             
                             HStack(spacing: 8) {
                                 Image(systemName: "location.fill")
-                                    .font(.subheadline)
+                                    .font(.caption)
                                     .foregroundColor(.seaweedGreen)
                                 
                                 Text("Curated for \(exploreService.locationName)")
-                                    .font(.title3)
+                                    .font(.subheadline)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
                             }
@@ -224,7 +232,7 @@ struct ExploreView: View {
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 50)
+                    .padding(.top, 20)
                     
                     // Decorative line
                     Rectangle()
@@ -238,92 +246,29 @@ struct ExploreView: View {
                         .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
                 )
                 
-                // Separate categories
-                VStack(spacing: 32) {
-                    // Restaurants Section
-                    if !restaurantIdeas.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Restaurants")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("\(restaurantIdeas.count) places to dine")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 16) {
-                                    ForEach(restaurantIdeas) { idea in
-                                        ExploreIdeaCard(idea: idea, isHorizontal: true)
-                                            .frame(width: 320)
-                                    }
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 16)
-                                .padding(.trailing, 20)
-                            }
+                // Mixed ideas list - vertical scroll
+                VStack(spacing: 20) {
+                    ForEach(Array(exploreService.ideas.enumerated()), id: \.element.id) { index, idea in
+                        NavigationLink(destination: RestaurantDetailView(restaurant: idea)) {
+                            ExploreIdeaCard(idea: idea, isHorizontal: false, index: index)
                         }
-                    }
-                    
-                    // Activities Section
-                    if !activityIdeas.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Activities")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("\(activityIdeas.count) things to do")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 16) {
-                                    ForEach(activityIdeas) { idea in
-                                        ExploreIdeaCard(idea: idea, isHorizontal: true)
-                                            .frame(width: 320)
-                                    }
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 16)
-                                .padding(.trailing, 20)
-                            }
-                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal, 20)
                     }
                 }
             }
         }
     }
     
-    // MARK: - Computed Properties
-    private var restaurantIdeas: [ExploreIdea] {
-        exploreService.ideas.filter { $0.category == "restaurant" }
-    }
-    
-    private var activityIdeas: [ExploreIdea] {
-        exploreService.ideas.filter { $0.category == "activity" }
-    }
-    
     // MARK: - Methods
     private func loadExploreIdeas() {
+        // Clear any existing error state
+        exploreService.errorMessage = nil
+        exploreService.showLocationPermissionDenied = false
+        
         exploreService.getExploreIdeas { result in
-            // The service now handles updating its own published properties
-            // No need to manually update state here
+            // The service handles updating its own published properties
+            // Additional handling can be added here if needed
         }
     }
 }
@@ -332,266 +277,272 @@ struct ExploreView: View {
 struct ExploreIdeaCard: View {
     let idea: ExploreIdea
     let isHorizontal: Bool
+    let index: Int
     @State private var isPressed = false
-    @State private var showSchedulingView = false
     @State private var userLocation: CLLocation?
     @State private var distance: Double?
     
-    init(idea: ExploreIdea, isHorizontal: Bool = false) {
+    init(idea: ExploreIdea, isHorizontal: Bool = false, index: Int = 0) {
         self.idea = idea
         self.isHorizontal = isHorizontal
+        self.index = index
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: isHorizontal ? 16 : 16) {
-            
-            // Restaurant/Activity Image
-            if let imageURL = idea.imageURL, !imageURL.isEmpty {
-                AsyncImage(url: URL(string: imageURL)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .overlay(
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                        )
-                }
-                .frame(height: isHorizontal ? 120 : 150)
-                .clipped()
-                .cornerRadius(12)
-            } else {
-                // Placeholder when no image
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(height: isHorizontal ? 120 : 150)
-                    .cornerRadius(12)
-                    .overlay(
-                        VStack {
-                            Image(systemName: idea.category == "restaurant" ? "fork.knife" : "figure.run")
-                                .font(.system(size: 30))
-                                .foregroundColor(.gray)
-                            Text("No Image")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                    )
+        imageSection
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.seaweedGreen.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal, 5)
+            .scaleEffect(isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: isPressed)
+            .onAppear {
+                calculateDistance()
             }
-            
-            // Title and description
-            VStack(alignment: .leading, spacing: isHorizontal ? 8 : 8) {
-                Text(idea.name)
-                    .font(isHorizontal ? .title3 : .title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                    .lineLimit(isHorizontal ? 2 : 2)
-                
-                Text(idea.description)
-                    .font(isHorizontal ? .body : .body)
-                    .foregroundColor(.secondary)
-                    .lineLimit(isHorizontal ? 3 : 3)
-            }
-            
-            // Location - Full width button
-            Button(action: {
-                openInAppleMaps()
-            }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "mappin")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(idea.address)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        if let distance = distance {
-                            Text(formatDistance(distance))
-                                .font(.caption2)
-                                .foregroundColor(.blue)
-                                .fontWeight(.medium)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Text("open")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(Color.blue.opacity(0.1))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                        )
-                )
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // Tags and Links Menu
-            HStack(spacing: 8) {
-                if let cuisineType = idea.cuisineType {
-                    TagView(text: formatCuisineType(cuisineType), color: .seaweedGreen)
-                }
-                
-                if let activityType = idea.activityType {
-                    TagView(text: activityType, color: .seaweedGreen)
-                }
-                
-                TagView(text: formatPriceLevel(idea.priceLevel), color: .seaweedGreen)
-                
-                if let duration = idea.duration {
-                    TagView(text: duration, color: .seaweedGreen)
-                }
-                
-                Spacer()
-                
-                Spacer()
-            }
-            
-            // Rating with review count
-            HStack(spacing: 4) {
-                HStack(spacing: 2) {
-                    ForEach(0..<5) { index in
-                        Image(systemName: index < Int(idea.rating) ? "star.fill" : "star")
-                            .font(.caption)
-                            .foregroundColor(.yellow)
-                    }
-                }
-                Text(String(format: "%.1f", idea.rating))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
-                Text("(\(generateReviewCount()))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-            }
-            
-            // Action buttons
-            HStack(spacing: 12) {
-                Button(action: {
-                    // Handle like
-                    print("Liked: \(idea.name)")
-                }) {
-                    Image(systemName: "heart")
-                        .font(.system(size: 20))
-                        .foregroundColor(.red)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(Color.red.opacity(0.1))
-                        )
-                }
-                
-                Button(action: {
-                    // Handle dislike
-                    print("Disliked: \(idea.name)")
-                }) {
-                    Image(systemName: "heart.slash")
-                        .font(.system(size: 20))
-                        .foregroundColor(.gray)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(Color.gray.opacity(0.1))
-                        )
-                }
-                
-                Spacer()
-                
-                // Select button with Links overlay
-                Button(action: {
-                    showSchedulingView = true
-                }) {
-                    Text("Select")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(
-                            Capsule()
-                                .fill(Color.seaweedGreenGradient)
-                        )
-                }
+    }
+    
+    // MARK: - Image Section
+    private var imageSection: some View {
+        ZStack {
+            // Background image container with fixed dimensions
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(height: 240)
+                .padding(.horizontal, 4)
                 .overlay(
-                    // Links Menu Button - Grey menucard overlay
                     Group {
-                        if idea.websiteURL != nil || idea.menuURL != nil {
-                            Menu {
-                                if let websiteURL = idea.websiteURL, let url = URL(string: websiteURL) {
-                                    Button(action: {
-                                        UIApplication.shared.open(url)
-                                    }) {
-                                        Label("Restaurant Website", systemImage: "safari")
-                                    }
-                                }
-                                
-                                if let menuURL = idea.menuURL, let url = URL(string: menuURL) {
-                                    Button(action: {
-                                        UIApplication.shared.open(url)
-                                    }) {
-                                        Label("View Menu", systemImage: "doc.text")
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "menucard")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(.black)
-                                    .frame(width: 40, height: 40)
-                                    .background(
-                                        Circle()
-                                            .fill(Color.seaweedGreen.opacity(0.1))
-                                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                        if let imageURL = idea.imageURL, !imageURL.isEmpty {
+                            AsyncImage(url: URL(string: imageURL)) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: .infinity, height: 240)
+                                    .clipped()
+                            } placeholder: {
+                                // Loading placeholder
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 240)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            Text("Loading...")
+                                                .font(.caption)
+                                                .foregroundColor(.white)
+                                        }
                                     )
                             }
-                            .offset(x: -6, y: -50)// Offset to the right and up
+                        } else {
+                            // No image placeholder
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 240)
+                                .overlay(
+                                    VStack(spacing: 8) {
+                                        Image(systemName: idea.category == "restaurant" ? "fork.knife" : "figure.run")
+                                            .font(.system(size: 30))
+                                            .foregroundColor(.gray)
+                                        Text("No Image")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                )
                         }
-                    },
-                    alignment: .topTrailing
+                    }
                 )
+            
+            // Gradient overlay
+            gradientOverlay
+            
+            // Popularity tag (top right)
+            VStack {
+                HStack {
+                    Spacer()
+                    popularityTag
+                }
+                .padding(.top, 12)
+                .padding(.trailing, 12)
+                
+                Spacer()
             }
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.seaweedGreen.opacity(0.2), lineWidth: 1)
-        )
-        .scaleEffect(isPressed ? 0.98 : 1.0)
-        .animation(.easeInOut(duration: 0.1), value: isPressed)
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isPressed = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeInOut(duration: 0.1)) {
-                    isPressed = false
+            
+            // Content overlay (bottom)
+            VStack {
+                Spacer()
+                HStack {
+                    contentOverlay
+                    Spacer()
                 }
             }
+            
         }
-        .sheet(isPresented: $showSchedulingView) {
-            EventSchedulingView(idea: idea)
-        }
-        .onAppear {
-            calculateDistance()
+        .frame(height: 240)
+        .cornerRadius(16)
+    }
+    
+    // MARK: - Popularity Tag
+    private var popularityTag: some View {
+        Group {
+            if index == 0 {
+                // First restaurant gets "Most Popular" tag
+                Text("Most Popular")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.red)
+                            .shadow(color: .red.opacity(0.3), radius: 4, x: 0, y: 2)
+                    )
+            } else if index == 1 {
+                // Second restaurant gets "Recommended" tag
+                Text("Recommended")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.blue)
+                            .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
+                    )
+            }
         }
     }
+    
+    // MARK: - Gradient Overlay
+    private var gradientOverlay: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.clear,
+                Color.black.opacity(0.1),
+                Color.black.opacity(0.4),
+                Color.black.opacity(0.8)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+    
+    
+    // MARK: - Content Overlay
+    private var contentOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Restaurant title as dropdown menu
+            Menu {
+                // Website link
+                if let websiteURL = idea.websiteURL, let url = URL(string: websiteURL) {
+                    Button(action: {
+                        UIApplication.shared.open(url)
+                    }) {
+                        Label("Visit Website", systemImage: "safari")
+                    }
+                }
+                
+                // Menu link
+                if let menuURL = idea.menuURL, let url = URL(string: menuURL) {
+                    Button(action: {
+                        UIApplication.shared.open(url)
+                    }) {
+                        Label("View Menu", systemImage: "doc.text")
+                    }
+                }
+                
+                // Address link (opens in Maps)
+                Button(action: {
+                    openInAppleMaps()
+                }) {
+                    Label("Get Directions", systemImage: "location")
+                }
+            } label: {
+                HStack {
+                    Text(idea.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundColor(.white)
+                }
+            }
+            
+            // Key information over the image
+            keyInfoRow
+            
+            // Address
+            addressText
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+    }
+    
+    
+    
+    // MARK: - Key Info Row
+    private var keyInfoRow: some View {
+        HStack(spacing: 12) {
+            // Rating
+            ratingView
+            
+            // Price level
+            priceLevelView
+            
+            Spacer()
+        }
+    }
+    
+    // MARK: - Rating View
+    private var ratingView: some View {
+        HStack(spacing: 4) {
+            HStack(spacing: 2) {
+                ForEach(0..<5) { index in
+                    Image(systemName: index < Int(idea.rating) ? "star.fill" : "star")
+                        .font(.caption2)
+                        .foregroundColor(.yellow)
+                }
+            }
+            Text(String(format: "%.1f", idea.rating))
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+        }
+    }
+    
+    // MARK: - Price Level View
+    private var priceLevelView: some View {
+        Text(formatPriceLevel(idea.priceLevel))
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.2))
+            )
+    }
+    
+    
+    // MARK: - Address Text
+    private var addressText: some View {
+        Text(idea.address)
+            .font(.caption)
+            .foregroundColor(.white.opacity(0.8))
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+    
     
     private func openInAppleMaps() {
         // Use restaurant name for searching instead of exact address
@@ -748,6 +699,27 @@ struct TagView: View {
 // MARK: - Helper Functions
 extension ExploreIdeaCard {
     // Emoji placeholders removed for cleaner UI
+}
+
+// MARK: - Corner Radius Extension
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
+    }
 }
 
 #Preview {

@@ -35,112 +35,89 @@ struct CombinedDateFlowView: View {
     var body: some View {
         ZStack {
             if showResults {
-                // Restaurant Results - Full Screen
-                RestaurantResultsView(
-                    dateType: selectedDateType,
-                    mealTimes: selectedMealTimes,
-                    priceRange: selectedPriceRange,
-                    date: selectedDate,
-                    cuisines: selectedCuisines,
-                    activityTypes: selectedActivityTypes,
-                    activityIntensity: selectedActivityIntensity
-                )
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing),
-                    removal: .move(edge: .trailing)
-                ))
-                .zIndex(1)
+                // Results - Full Screen (conditional based on date type)
+                if selectedDateType == .meal {
+                    RestaurantResultsView(
+                        dateType: selectedDateType,
+                        mealTimes: selectedMealTimes,
+                        priceRange: selectedPriceRange,
+                        date: selectedDate,
+                        cuisines: selectedCuisines
+                    )
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing),
+                        removal: .move(edge: .trailing)
+                    ))
+                    .zIndex(1)
+                } else {
+                    ActivityResultsView(
+                        dateType: selectedDateType,
+                        activityTypes: selectedActivityTypes,
+                        activityIntensity: selectedActivityIntensity,
+                        priceRange: selectedPriceRange,
+                        date: selectedDate
+                    )
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing),
+                        removal: .move(edge: .trailing)
+                    ))
+                    .zIndex(1)
+                }
             } else {
-                // Date Creation Flow - Full Screen
+                // Date Creation Flow - Half Sheet
                 VStack(spacing: 0) {
-                    // Header with X button and progress indicator
-                    VStack(spacing: 16) {
-                        // Top row with X button - fixed position
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                dismiss()
-                            }) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.primary)
-                            }
-                            .padding(.trailing, 40)
-                        }
-                        .padding(.top, 10)
-                        .frame(height: 30) // Fixed height for X button row
-                        
-                        // Progress indicator - always present but with opacity control
-                        HStack {
-                            Spacer()
-                            HStack(spacing: 8) {
-                                ForEach(0..<5, id: \.self) { index in
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(index <= maxStepReached && selectedDateType != nil ? Color.seaweedGreen : Color.gray.opacity(0.3))
-                                        .frame(width: 60, height: 4)
-                                        .animation(.easeInOut(duration: 0.3), value: maxStepReached)
-                                }
-                            }
-                            .frame(maxWidth: 400) // Fixed maximum width
-                            Spacer()
-                        }
-                        .padding(.horizontal, 40)
-                        .frame(height: 20) // Fixed height to prevent layout shifts
-                        .opacity(selectedDateType != nil ? 1.0 : 0.0) // Show/hide with opacity
-                        .animation(.easeInOut(duration: 0.3), value: selectedDateType != nil)
-                    }
-                    
-                    // Content - fixed width container
-                    VStack {
-                        if selectedDateType == nil {
-                            // Show date type selection first
-                            DateTypeSelectionView(selectedDateType: $selectedDateType)
-                                .onChange(of: selectedDateType) { newValue in
-                                    if newValue != nil {
-                                        maxStepReached = max(maxStepReached, currentStep)
-                                    }
-                                }
-                        } else {
-                            // Show flow based on selected date type
-                            switch currentStep {
-                            case 0:
+                    // Content - scrollable for half-sheet
+                    ScrollView {
+                        VStack {
+                            if selectedDateType == nil {
+                                // Show date type selection first
                                 DateTypeSelectionView(selectedDateType: $selectedDateType)
-                            case 1:
-                                if selectedDateType == .meal {
-                                    MealTimeSelectionView(selectedMealTimes: $selectedMealTimes)
-                                } else {
-                                    ActivitySelectionView(
-                                        selectedActivityTypes: $selectedActivityTypes,
-                                        selectedActivityIntensity: $selectedActivityIntensity
-                                    )
+                                    .onChange(of: selectedDateType) { newValue in
+                                        if newValue != nil {
+                                            maxStepReached = max(maxStepReached, currentStep)
+                                        }
+                                    }
+                            } else {
+                                // Show flow based on selected date type
+                                switch currentStep {
+                                case 0:
+                                    DateTypeSelectionView(selectedDateType: $selectedDateType)
+                                case 1:
+                                    if selectedDateType == .meal {
+                                        MealTimeSelectionView(selectedMealTimes: $selectedMealTimes)
+                                    } else {
+                                        ActivitySelectionView(
+                                            selectedActivityTypes: $selectedActivityTypes,
+                                            selectedActivityIntensity: $selectedActivityIntensity
+                                        )
+                                    }
+                                case 2:
+                                    if selectedDateType == .meal {
+                                        PriceRangeSelectionView(selectedPriceRange: $selectedPriceRange, dateType: selectedDateType!)
+                                    } else {
+                                        ActivityIntensitySelectionView(selectedActivityIntensity: $selectedActivityIntensity)
+                                    }
+                                case 3:
+                                    if selectedDateType == .meal {
+                                        DateSelectionView(selectedDate: $selectedDate)
+                                    } else {
+                                        PriceRangeSelectionView(selectedPriceRange: $selectedPriceRange, dateType: selectedDateType!)
+                                    }
+                                case 4:
+                                    if selectedDateType == .meal {
+                                        CuisineSelectionView(selectedCuisines: $selectedCuisines)
+                                    } else {
+                                        DateSelectionView(selectedDate: $selectedDate)
+                                    }
+                                default:
+                                    EmptyView()
                                 }
-                            case 2:
-                                if selectedDateType == .meal {
-                                    PriceRangeSelectionView(selectedPriceRange: $selectedPriceRange, dateType: selectedDateType!)
-                                } else {
-                                    ActivityIntensitySelectionView(selectedActivityIntensity: $selectedActivityIntensity)
-                                }
-                            case 3:
-                                if selectedDateType == .meal {
-                                    DateSelectionView(selectedDate: $selectedDate)
-                                } else {
-                                    PriceRangeSelectionView(selectedPriceRange: $selectedPriceRange, dateType: selectedDateType!)
-                                }
-                            case 4:
-                                if selectedDateType == .meal {
-                                    CuisineSelectionView(selectedCuisines: $selectedCuisines)
-                                } else {
-                                    DateSelectionView(selectedDate: $selectedDate)
-                                }
-                            default:
-                                EmptyView()
                             }
                         }
+                        .padding(.horizontal, 20)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped() // Prevent content from overflowing
                     
-                    // Navigation buttons (only show if date type is selected)
+                    // Compact navigation buttons
                     if selectedDateType != nil {
                         HStack {
                             // Previous button (only show if not on first step)
@@ -150,7 +127,7 @@ struct CombinedDateFlowView: View {
                                         currentStep -= 1
                                     }
                                 }
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.seaweedGreen)
                             }
                             
@@ -169,11 +146,11 @@ struct CombinedDateFlowView: View {
                                     }
                                 }
                             }
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.seaweedGreen)
                         }
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 50)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -214,25 +191,5 @@ struct CombinedDateFlowView: View {
             }
         }
         
-        // Pre-populate activity types based on user hobbies
-        if !userProfile.hobbies.isEmpty {
-            let hobbyToActivityMap: [String: ActivityType] = [
-                "sports": .sports,
-                "fitness": .fitness,
-                "outdoor": .outdoor,
-                "entertainment": .entertainment,
-                "arts": .entertainment,
-                "music": .entertainment,
-                "dancing": .entertainment,
-                "gaming": .indoor,
-                "reading": .indoor,
-                "cooking": .indoor
-            ]
-            
-            let userActivityTypes = userProfile.hobbies.compactMap { hobby in
-                hobbyToActivityMap[hobby.lowercased()]
-            }
-            selectedActivityTypes = Set(userActivityTypes)
-        }
     }
 }

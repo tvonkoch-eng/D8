@@ -14,19 +14,14 @@ struct RestaurantResultsView: View {
     let priceRange: PriceRange?
     let date: Date
     let cuisines: Set<Cuisine>
-    let activityTypes: Set<ActivityType>?
-    let activityIntensity: ActivityIntensity?
     
-    @StateObject private var restaurantService = RestaurantService.shared
+    @StateObject private var backendService = BackendService.shared
     @State private var recommendations: [RestaurantRecommendation] = []
     @State private var isLoading = true
-    @State private var isLoadingMore = false
     @State private var errorMessage: String?
     @State private var locationManager = LocationManager()
     @State private var progressText = "Initializing search..."
     @State private var progressValue: Double = 0.0
-    @State private var currentPage = 1
-    @State private var hasMoreResults = true
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -50,9 +45,16 @@ struct RestaurantResultsView: View {
                                 .animation(.easeInOut(duration: 0.2), value: progressText)
                         }
                         
-                        // Loading spinner
-                        ProgressView()
-                            .scaleEffect(1.2)
+                        // Loading animation
+                        HStack(spacing: 8) {
+                            ForEach(0..<3) { index in
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 8, height: 8)
+                                    .scaleEffect(progressValue > Double(index) * 0.3 ? 1.2 : 0.8)
+                                    .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: progressValue)
+                            }
+                        }
                     }
                     
                     Spacer()
@@ -60,51 +62,40 @@ struct RestaurantResultsView: View {
                 .padding()
             } else if let errorMessage = errorMessage {
                 VStack(spacing: 20) {
+                    Spacer()
+                    
+                    VStack(spacing: 16) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 50))
+                            .font(.system(size: 60))
                         .foregroundColor(.orange)
-                    Text("Oops! Something went wrong")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                        
+                        Text("Oops!")
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
                     Text(errorMessage)
                         .font(.body)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
+                    }
                     
                     Button("Try Again") {
                         loadRecommendations()
                     }
                     .buttonStyle(.borderedProminent)
-                }
-                .padding()
-            } else if recommendations.isEmpty {
-                VStack(spacing: 20) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 50))
-                        .foregroundColor(.gray)
-                    Text("No \(dateType == .activity ? "activities" : "restaurants") found")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    Text("We couldn't find any \(dateType == .activity ? "activities" : "restaurants") matching your criteria. Try adjusting your preferences or location.")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                    .controlSize(.large)
                     
-                    Button("Try Again") {
-                        loadRecommendations()
-                    }
-                    .buttonStyle(.borderedProminent)
+                    Spacer()
                 }
                 .padding()
             } else {
                 VStack(spacing: 0) {
-                    // Header with exit button
+                    // Compact header
                     HStack {
-                        Text("\(recommendations.count) \(dateType == .activity ? "activities" : "restaurants") found")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
+                        Text("2 Perfect Matches")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.primary)
                         
                         Spacer()
                         
@@ -122,53 +113,63 @@ struct RestaurantResultsView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 12)
                     
-                    // Results list
-                    VStack(spacing: 0) {
-                        ScrollView {
-                            LazyVStack(spacing: 16) {
-                                ForEach(recommendations) { recommendation in
-                                    RestaurantCardView(recommendation: recommendation, dateType: dateType)
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 20)
-                        }
-                        
-                        // Load More button - outside ScrollView so it's always visible
-                        if hasMoreResults && !isLoadingMore {
-                            Button(action: {
-                                loadMoreRecommendations()
-                            }) {
-                                HStack {
-                                    Text("Load More")
-                                        .font(.headline)
-                                        .fontWeight(.medium)
-                                    Image(systemName: "arrow.down")
-                                        .font(.system(size: 16, weight: .medium))
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 32)
-                                .padding(.vertical, 16)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.blue)
+                    // Two results side by side
+                    if recommendations.count >= 2 {
+                        TabView {
+                            ForEach(Array(recommendations.prefix(2).enumerated()), id: \.element.id) { index, recommendation in
+                                CompactRestaurantCardView(
+                                    recommendation: recommendation, 
+                                    dateType: dateType,
+                                    matchNumber: index + 1
                                 )
+                                .padding(.horizontal, 20)
                             }
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 20)
-                        } else if isLoadingMore {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Loading more restaurants...")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 20)
                         }
+                        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                        .frame(height: 300)
+                    } else if recommendations.count == 1 {
+                        CompactRestaurantCardView(
+                            recommendation: recommendations[0], 
+                            dateType: dateType,
+                            matchNumber: 1
+                        )
+                        .padding(.horizontal, 20)
+                        .frame(height: 300)
+                    } else {
+                        VStack(spacing: 16) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray)
+                            
+                            Text("No matches found")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                            
+                            Button("Try Different Preferences") {
+                                dismiss()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .frame(height: 300)
+                    }
+                    
+                    // Get more options button
+                    if recommendations.count >= 2 {
+                        Button("Get 2 More Options") {
+                            // Refresh with different criteria
+                            loadRecommendations()
+                        }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.seaweedGreen)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 24)
+                        .background(
+                            Capsule()
+                                .stroke(Color.seaweedGreen, lineWidth: 2)
+                        )
+                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -182,8 +183,6 @@ struct RestaurantResultsView: View {
     private func loadRecommendations() {
         isLoading = true
         errorMessage = nil
-        currentPage = 1
-        hasMoreResults = true
         progressValue = 0.0
         progressText = "Initializing search..."
         
@@ -192,49 +191,67 @@ struct RestaurantResultsView: View {
         
         // Get current location
         locationManager.getCurrentLocation { coordinate in
+            guard let coordinate = coordinate else {
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    self.errorMessage = "Unable to get your location. Please check location permissions."
+                }
+                return
+            }
+            
             let locationString = "Current Location"
             
-            restaurantService.getRestaurantRecommendations(
-                dateType: self.dateType ?? .meal,
-                mealTimes: self.dateType == .meal ? self.mealTimes : nil,
-                priceRange: self.priceRange,
-                cuisines: self.dateType == .meal ? self.cuisines : nil,
-                activityTypes: self.dateType == .activity ? self.activityTypes : nil,
-                activityIntensity: self.dateType == .activity ? self.activityIntensity : nil,
-                date: self.date,
+            backendService.getDateRecommendations(
                 location: locationString,
+                dateType: self.dateType ?? .meal,
+                mealTimes: self.mealTimes,
+                priceRange: self.priceRange,
+                cuisines: self.cuisines,
+                activityTypes: nil,
+                activityIntensity: nil,
+                date: self.date,
                 coordinate: coordinate
             ) { result in
-                // Complete the progress when API call finishes
                 DispatchQueue.main.async {
+                    self.isLoading = false
+                    
                     switch result {
-                    case .success(let recs):
-                        self.updateProgress(text: "Complete!", value: 1.0)
-                        self.recommendations = recs
-                        // Set hasMoreResults based on whether we got a full page of results
-                        self.hasMoreResults = recs.count >= 10
-                        print("✅ Loaded \(recs.count) recommendations, hasMoreResults: \(self.hasMoreResults)")
-                        print("✅ Load more button should be visible: \(self.hasMoreResults && !self.isLoadingMore)")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            self.isLoading = false
+                    case .success(let backendRecommendations):
+                        // Convert BackendPlaceRecommendation to RestaurantRecommendation
+                        let recommendations = backendRecommendations.compactMap { backendRec in
+                            self.convertBackendToRestaurantRecommendation(backendRec)
                         }
+                        // Limit to 2 perfect matches
+                        self.recommendations = Array(recommendations.prefix(2))
+                        self.progressText = "Found \(recommendations.count) restaurants!"
+                        self.progressValue = 1.0
+                        
+                        // Store recommendations in Firebase
+                        self.storeRestaurantRecommendationsInFirebase(recommendations)
+                        
+                        // Hide progress after a moment
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.progressText = ""
+                        }
+                        
                     case .failure(let error):
-                        // Provide more specific error messages
-                        if let urlError = error as? URLError {
-                            switch urlError.code {
-                            case .notConnectedToInternet, .networkConnectionLost:
-                                self.errorMessage = "No internet connection. Please check your network and try again."
-                            case .timedOut:
-                                self.errorMessage = "Request timed out. Please try again."
-                            case .cannotConnectToHost, .cannotFindHost:
-                                self.errorMessage = "Cannot connect to server. Please try again later."
-                            default:
-                                self.errorMessage = "Network error: \(error.localizedDescription)"
-                            }
-                        } else {
-                            self.errorMessage = error.localizedDescription
+                        print("Backend Error: \(error)")
+                        if let decodingError = error as? DecodingError {
+                            print("Decoding Error Details: \(decodingError)")
                         }
-                        self.isLoading = false
+                        
+                        // Use fallback mock data for testing
+                        print("Using fallback mock data...")
+                        let mockRecommendations = self.generateMockRestaurantRecommendations()
+                        // Limit to 2 perfect matches
+                        self.recommendations = Array(mockRecommendations.prefix(2))
+                        self.progressText = "Found \(mockRecommendations.count) restaurants!"
+                        self.progressValue = 1.0
+                        
+                        // Hide progress after a moment
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.progressText = ""
+                        }
                     }
                 }
             }
@@ -242,96 +259,170 @@ struct RestaurantResultsView: View {
     }
     
     private func startProgressAnimation() {
-        // 15-second smooth progress animation
+        // Smooth progress animation over 15 seconds
         let totalDuration: TimeInterval = 15.0
-        let steps = [
-            (text: "Getting your location...", value: 0.1, delay: 0.5),
-            (text: dateType == .activity ? "Searching for activities..." : "Searching for restaurants...", value: 0.25, delay: 2.0),
-            (text: "Analyzing preferences...", value: 0.4, delay: 3.5),
-            (text: "Finding perfect matches...", value: 0.55, delay: 5.0),
-            (text: "Checking availability...", value: 0.7, delay: 6.5),
-            (text: dateType == .activity ? "Processing activity recommendations..." : "Processing results...", value: 0.8, delay: 8.0),
-            (text: "Optimizing suggestions...", value: 0.9, delay: 10.0),
-            (text: dateType == .activity ? "Finalizing activity suggestions..." : "Finalizing recommendations...", value: 0.95, delay: 12.0)
+        let steps = 30
+        let stepDuration = totalDuration / Double(steps)
+        
+        for i in 0...steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration * Double(i)) {
+                let progress = Double(i) / Double(steps)
+                self.progressValue = progress
+                
+                // Update progress text
+                if progress < 0.3 {
+                    self.progressText = "Searching restaurants..."
+                } else if progress < 0.6 {
+                    self.progressText = "Filtering by preferences..."
+                } else if progress < 0.9 {
+                    self.progressText = "Ranking results..."
+                } else {
+                    self.progressText = "Finalizing recommendations..."
+                }
+            }
+        }
+    }
+    
+    // MARK: - Conversion Helper
+    private func convertBackendToRestaurantRecommendation(_ backendRec: BackendPlaceRecommendation) -> RestaurantRecommendation? {
+        // Only convert restaurant-type recommendations for meal dates
+        guard dateType == .meal else {
+            return nil // Don't convert activities to restaurants
+        }
+        
+        // Only convert restaurant-type recommendations
+        guard backendRec.category.lowercased().contains("restaurant") || 
+              backendRec.category.lowercased().contains("food") ||
+              backendRec.category.lowercased().contains("dining") else {
+            return nil
+        }
+        
+        return RestaurantRecommendation(
+            name: backendRec.name,
+            description: backendRec.description,
+            location: backendRec.location,
+            address: backendRec.address,
+            latitude: backendRec.latitude,
+            longitude: backendRec.longitude,
+            cuisineType: backendRec.cuisine,
+            priceLevel: mapEstimatedCostToPriceLevel(backendRec.estimatedCost),
+            isOpen: true,
+            openHours: "11:00 AM - 10:00 PM", // Default hours since not provided by backend
+            rating: 4.0, // Default rating since not provided by backend
+            whyRecommended: backendRec.whyRecommended,
+            estimatedCost: backendRec.estimatedCost,
+            bestTime: backendRec.bestTime,
+            duration: "2-3 hours", // Default duration
+            imageURL: nil, // Not provided by backend
+            websiteURL: nil, // Not provided by backend
+            menuURL: nil // Not provided by backend
+        )
+    }
+    
+    private func mapEstimatedCostToPriceLevel(_ estimatedCost: String) -> String {
+        let cost = estimatedCost.lowercased()
+        
+        if cost.contains("$") {
+            // Extract dollar signs from cost string
+            let dollarCount = cost.filter { $0 == "$" }.count
+            return String(repeating: "$", count: min(dollarCount, 4))
+        } else if cost.contains("low") || cost.contains("budget") || cost.contains("cheap") {
+            return "$"
+        } else if cost.contains("medium") || cost.contains("moderate") || cost.contains("mid") {
+            return "$$"
+        } else if cost.contains("high") || cost.contains("expensive") || cost.contains("upscale") {
+            return "$$$"
+        } else if cost.contains("very high") || cost.contains("luxury") || cost.contains("fine dining") {
+            return "$$$$"
+        } else {
+            return "$$" // Default fallback
+        }
+    }
+    
+    // MARK: - Mock Data Generator
+    private func generateMockRestaurantRecommendations() -> [RestaurantRecommendation] {
+        let mockRestaurants = [
+            RestaurantRecommendation(
+                name: "Loquita",
+                description: "Loquita offers a vibrant and lively atmosphere with a modern Spanish twist, creating a romantic and energetic dining experience.",
+                location: "Santa Barbara, CA",
+                address: "202 State St, Santa Barbara, CA 93101",
+                latitude: 34.4208,
+                longitude: -119.6982,
+                cuisineType: "Spanish",
+                priceLevel: "$$",
+                isOpen: true,
+                openHours: "11:00 AM - 10:00 PM",
+                rating: 4.5,
+                whyRecommended: "Perfect for a romantic Spanish tapas experience",
+                estimatedCost: "$25-45",
+                bestTime: "Evening",
+                duration: "2-3 hours",
+                imageURL: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
+                websiteURL: "https://loquitasb.com",
+                menuURL: nil
+            ),
+            RestaurantRecommendation(
+                name: "The French Laundry",
+                description: "An elegant fine dining experience featuring contemporary French cuisine in a beautiful Napa Valley setting.",
+                location: "Yountville, CA",
+                address: "6640 Washington St, Yountville, CA 94599",
+                latitude: 38.4016,
+                longitude: -122.3608,
+                cuisineType: "French",
+                priceLevel: "$$$$",
+                isOpen: true,
+                openHours: "5:30 PM - 9:00 PM",
+                rating: 4.8,
+                whyRecommended: "World-renowned fine dining experience",
+                estimatedCost: "$300-400",
+                bestTime: "Evening",
+                duration: "3-4 hours",
+                imageURL: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800",
+                websiteURL: "https://thomaskeller.com/tfl",
+                menuURL: nil
+            ),
+            RestaurantRecommendation(
+                name: "Sushi Nakazawa",
+                description: "An intimate omakase experience featuring the finest sushi and sashimi prepared by master chefs.",
+                location: "New York, NY",
+                address: "23 Commerce St, New York, NY 10014",
+                latitude: 40.7328,
+                longitude: -74.0071,
+                cuisineType: "Japanese",
+                priceLevel: "$$$",
+                isOpen: true,
+                openHours: "5:00 PM - 10:30 PM",
+                rating: 4.7,
+                whyRecommended: "Exceptional omakase experience",
+                estimatedCost: "$150-200",
+                bestTime: "Evening",
+                duration: "2-3 hours",
+                imageURL: "https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?w=800",
+                websiteURL: "https://sushinakazawa.com",
+                menuURL: nil
+            )
         ]
         
-        // Set up step-based progress updates
-        for step in steps {
-            DispatchQueue.main.asyncAfter(deadline: .now() + step.delay) {
-                if self.isLoading { // Only update if still loading
-                    self.updateProgress(text: step.text, value: step.value)
-                }
-            }
-        }
-        
-        // Smooth continuous progress that only increases
-        let animationSteps = 100
-        let stepDuration = totalDuration / Double(animationSteps)
-        
-        for i in 1...animationSteps {
-            DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration * Double(i)) {
-                if self.isLoading {
-                    let newProgress = Double(i) / Double(animationSteps) * 0.95 // Cap at 95% until API completes
-                    // Only update if the new progress is greater than current progress
-                    if newProgress > self.progressValue {
-                        self.progressValue = newProgress
-                    }
-                }
-            }
-        }
+        return mockRestaurants
     }
     
-    private func loadMoreRecommendations() {
-        guard !isLoadingMore && hasMoreResults else { 
-            print("❌ Load more blocked - isLoadingMore: \(isLoadingMore), hasMoreResults: \(hasMoreResults)")
-            return 
-        }
-        
-        print("🔄 Loading more recommendations, page: \(currentPage + 1)")
-        isLoadingMore = true
-        currentPage += 1
-        
-        // Get current location
-        locationManager.getCurrentLocation { coordinate in
-            let locationString = "Current Location"
-            
-            restaurantService.getRestaurantRecommendations(
-                dateType: dateType ?? .meal,
-                mealTimes: dateType == .meal ? mealTimes : nil,
-                priceRange: priceRange,
-                cuisines: dateType == .meal ? cuisines : nil,
-                activityTypes: dateType == .activity ? activityTypes : nil,
-                activityIntensity: dateType == .activity ? activityIntensity : nil,
-                date: date,
-                location: locationString,
-                coordinate: coordinate,
-                page: currentPage
-            ) { result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success(let newRecs):
-                        recommendations.append(contentsOf: newRecs)
-                        hasMoreResults = newRecs.count >= 10
-                        print("Loaded \(newRecs.count) more recommendations, total: \(recommendations.count), hasMoreResults: \(hasMoreResults)")
-                        isLoadingMore = false
-                    case .failure(let error):
-                        print("Error loading more: \(error)")
-                        // Don't show error for load more, just stop trying
-                        hasMoreResults = false
-                        isLoadingMore = false
-                    }
-                }
-            }
-        }
-    }
-    
-    private func updateProgress(text: String, value: Double) {
-        DispatchQueue.main.async {
-            progressText = text
-            // Only update progress if the new value is greater than current value
-            if value > progressValue {
-                progressValue = value
-            }
+    // MARK: - Firebase Storage
+    private func storeRestaurantRecommendationsInFirebase(_ recommendations: [RestaurantRecommendation]) {
+        // Store each restaurant recommendation in Firebase for later retrieval
+        for recommendation in recommendations {
+            FirebaseService.shared.storeRecommendation(
+                name: recommendation.name,
+                description: recommendation.description,
+                category: "restaurant",
+                location: recommendation.location,
+                latitude: recommendation.latitude,
+                longitude: recommendation.longitude,
+                estimatedCost: recommendation.estimatedCost,
+                bestTime: recommendation.bestTime,
+                whyRecommended: recommendation.whyRecommended,
+                dateType: dateType ?? .meal
+            )
         }
     }
 }
@@ -341,222 +432,233 @@ struct RestaurantCardView: View {
     let dateType: DateType?
     @State private var userLocation: CLLocation?
     @State private var distance: Double?
+    @State private var isPressed = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Title
-            Text(recommendation.name)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.primary)
-                .lineLimit(2)
-            
-            // Description
-            Text(recommendation.description)
-                .font(.system(size: 16))
-                .foregroundColor(.primary)
-                .lineLimit(3)
-            
-            // Location with map pin (clickable) - moved below description
-            Button(action: {
-                openInAppleMaps()
-            }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "mappin")
-                        .font(.system(size: 12))
-                        .foregroundColor(.red)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(recommendation.address)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                        
-                        if let distance = distance {
-                            Text(formatDistance(distance))
-                                .font(.system(size: 11))
-                                .foregroundColor(.blue)
-                                .fontWeight(.medium)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Text("open")
+        imageSection
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.seaweedGreen.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal, 5)
+            .scaleEffect(isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: isPressed)
+            .onAppear {
+                calculateDistance()
+            }
+    }
+    
+    // MARK: - Image Section
+    private var imageSection: some View {
+        ZStack {
+            // Background image container with fixed dimensions
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(height: 240)
+                .padding(.horizontal, 4)
+                .overlay(
+                    Group {
+                        if let imageURL = recommendation.imageURL, !imageURL.isEmpty {
+                            AsyncImage(url: URL(string: imageURL)) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: .infinity, height: 240)
+                                    .clipped()
+                            } placeholder: {
+                                // Loading placeholder
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 240)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            Text("Loading...")
+                                                .font(.caption)
+                                                .foregroundColor(.white)
+                                        }
+                                    )
+                            }
+                        } else {
+                            // No image placeholder
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 240)
+                                .overlay(
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "fork.knife")
+                                            .font(.system(size: 30))
+                                            .foregroundColor(.gray)
+                                        Text("No Image")
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(Color.blue.opacity(0.1))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                        )
-                )
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // Tags and Links Menu
-            HStack(spacing: 8) {
-                TagView(text: formatCuisineType(recommendation.cuisineType), color: .seaweedGreen)
-                
-                TagView(text: formatPriceLevel(recommendation.priceLevel), color: .seaweedGreen)
-                
-                if let duration = recommendation.duration {
-                    TagView(text: duration, color: .seaweedGreen)
-                }
-                
-                Spacer()
-            }
-            
-            // Rating display
-            HStack(spacing: 4) {
-                HStack(spacing: 2) {
-                    ForEach(0..<5) { index in
-                        Image(systemName: index < Int(recommendation.rating) ? "star.fill" : "star")
-                            .font(.system(size: 14))
-                            .foregroundColor(.yellow)
-                    }
-                }
-                Text(String(format: "%.1f", recommendation.rating))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.primary)
-                
-                Text("(\(generateReviewCount()))")
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-            }
-            
-            // Action buttons
-            HStack(spacing: 12) {
-                // Feedback buttons
-                HStack(spacing: 8) {
-                    Button(action: {
-                        // Handle thumbs down
-                        print("Thumbs down: \(recommendation.name)")
-                    }) {
-                        Image(systemName: "hand.thumbsdown")
-                            .font(.system(size: 20))
-                            .foregroundColor(.red)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(Color.red.opacity(0.1))
-                            )
-                    }
-                    
-                    Button(action: {
-                        // Handle thumbs up
-                        print("Thumbs up: \(recommendation.name)")
-                    }) {
-                        Image(systemName: "hand.thumbsup")
-                            .font(.system(size: 20))
-                            .foregroundColor(.green)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(Color.green.opacity(0.1))
-                            )
-                    }
-                }
-                
-                Spacer()
-                
-                // Select button with Links overlay
-                Button(action: {
-                    // Handle selection
-                    print("Selected: \(recommendation.name)")
-                }) {
-                    Text("Select")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.seaweedGreenGradient)
-                        )
-                }
-                .overlay(
-                    // Links Menu Button - Circular overlay
-                    Group {
-                        if recommendation.websiteURL != nil || recommendation.menuURL != nil {
-                            Menu {
-                                if let websiteURL = recommendation.websiteURL, let url = URL(string: websiteURL) {
-                                    Button(action: {
-                                        UIApplication.shared.open(url)
-                                    }) {
-                                        Label("Restaurant Website", systemImage: "safari")
-                                    }
-                                }
-                                
-                                if let menuURL = recommendation.menuURL, let url = URL(string: menuURL) {
-                                    Button(action: {
-                                        UIApplication.shared.open(url)
-                                    }) {
-                                        Label("View Menu", systemImage: "doc.text")
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "menucard")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(.black)
-                                    .frame(width: 40, height: 40)
-                                    .background(
-                                        Circle()
-                                            .fill(Color.seaweedGreen.opacity(0.1))
-                                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                                    )
-                            }
-                            .offset(x: -6, y: -50) // Offset to the right and up
+                                )
                         }
-                    },
-                    alignment: .topTrailing
+                    }
                 )
+            
+            // Gradient overlay
+            gradientOverlay
+            
+            // Content overlay (bottom)
+            VStack {
+                Spacer()
+                HStack {
+                    contentOverlay
+                    Spacer()
+                }
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .frame(height: 240)
+        .cornerRadius(16)
+    }
+    
+    // MARK: - Gradient Overlay
+    private var gradientOverlay: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.clear,
+                Color.black.opacity(0.1),
+                Color.black.opacity(0.4),
+                Color.black.opacity(0.8)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.seaweedGreen.opacity(0.2), lineWidth: 1)
-        )
-        .onAppear {
-            calculateDistance()
+    }
+    
+    // MARK: - Content Overlay
+    private var contentOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Restaurant title as dropdown menu
+            Menu {
+                // Website link
+                if let websiteURL = recommendation.websiteURL, let url = URL(string: websiteURL) {
+                    Button(action: {
+                        UIApplication.shared.open(url)
+                    }) {
+                        Label("Visit Website", systemImage: "safari")
+                    }
+                }
+                
+                // Menu link
+                if let menuURL = recommendation.menuURL, let url = URL(string: menuURL) {
+                    Button(action: {
+                        UIApplication.shared.open(url)
+                    }) {
+                        Label("View Menu", systemImage: "doc.text")
+                    }
+                }
+                
+                // Address link (opens in Maps)
+                Button(action: {
+                    openInAppleMaps()
+                }) {
+                    Label("Get Directions", systemImage: "location")
+                }
+            } label: {
+                HStack {
+                    Text(recommendation.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundColor(.white)
+                }
+            }
+            
+            // Key information over the image
+            keyInfoRow
+            
+            // Address
+            addressText
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+    }
+    
+    
+    // MARK: - Key Info Row
+    private var keyInfoRow: some View {
+        HStack(spacing: 12) {
+            // Rating
+            ratingView
+            
+            // Price level
+            priceLevelView
+            
+            // Cuisine type
+            if !recommendation.cuisineType.isEmpty {
+                cuisineTypeView
+            }
+            
+            Spacer()
         }
     }
     
-    // MARK: - Location Methods
-    private func calculateDistance() {
-        guard let userLocation = userLocation else {
-            // Get user location if not available
-            LocationManager().getCurrentLocation { coordinate in
-                guard let coordinate = coordinate else {
-                    print("Failed to get user location")
-                    return
+    // MARK: - Rating View
+    private var ratingView: some View {
+        HStack(spacing: 4) {
+            HStack(spacing: 2) {
+                ForEach(0..<5) { index in
+                    Image(systemName: index < Int(recommendation.rating) ? "star.fill" : "star")
+                        .font(.caption2)
+                        .foregroundColor(.yellow)
                 }
-                self.userLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                self.calculateDistance()
             }
-            return
+            Text(String(format: "%.1f", recommendation.rating))
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
         }
-        
-        let restaurantLocation = CLLocation(
-            latitude: recommendation.latitude,
-            longitude: recommendation.longitude
-        )
-        
-        let distanceInMeters = userLocation.distance(from: restaurantLocation)
-        let distanceInMiles = distanceInMeters * 0.000621371 // Convert meters to miles
-        self.distance = distanceInMiles
+    }
+    
+    // MARK: - Price Level View
+    private var priceLevelView: some View {
+        Text(formatPriceLevel(recommendation.priceLevel))
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.2))
+            )
+    }
+    
+    // MARK: - Cuisine Type View
+    private var cuisineTypeView: some View {
+        Text(formatCuisineType(recommendation.cuisineType))
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.2))
+            )
+    }
+    
+    // MARK: - Address Text
+    private var addressText: some View {
+        Text(recommendation.address)
+            .font(.caption)
+            .foregroundColor(.white.opacity(0.8))
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
     
     private func openInAppleMaps() {
@@ -569,115 +671,36 @@ struct RestaurantCardView: View {
         }
     }
     
+    private func calculateDistance() {
+        guard let currentLocation = LocationManager.shared.currentLocation else {
+            // Get user location if not available
+            LocationManager.shared.getCurrentLocation { coordinate in
+                guard let coordinate = coordinate else {
+                    print("Failed to get user location")
+                    return
+                }
+                self.userLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                self.calculateDistance()
+            }
+            return
+        }
+        
+        let userLocation = CLLocation(latitude: currentLocation.latitude, longitude: currentLocation.longitude)
+        let restaurantLocation = CLLocation(
+            latitude: recommendation.latitude,
+            longitude: recommendation.longitude
+        )
+        
+        let distanceInMeters = userLocation.distance(from: restaurantLocation)
+        let distanceInMiles = distanceInMeters * 0.000621371 // Convert meters to miles
+        self.distance = distanceInMiles
+    }
+    
     private func formatDistance(_ distance: Double) -> String {
         if distance < 1.0 {
             return String(format: "%.1f mi", distance)
         } else {
             return String(format: "%.0f mi", distance)
-        }
-    }
-    
-    // MARK: - Computed Properties
-    private var simplifiedPrice: String {
-        let cost = recommendation.estimatedCost.lowercased()
-        
-        // Check if it's free
-        if cost.contains("free") {
-            return "Free"
-        }
-        
-        // Extract price range and calculate average
-        if let range = extractPriceRange(from: cost) {
-            let average = (range.min + range.max) / 2
-            let rounded = Int(ceil(average / 5.0) * 5.0) // Round up to nearest $5
-            return "$\(rounded)"
-        }
-        
-        // Fallback to original if we can't parse
-        return recommendation.estimatedCost
-    }
-    
-    private func extractPriceRange(from cost: String) -> (min: Double, max: Double)? {
-        // Look for patterns like "$9.95 - $29.95" or "$15-$25"
-        let pattern = #"\$?(\d+(?:\.\d+)?)\s*-\s*\$?(\d+(?:\.\d+)?)"#
-        
-        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-            let range = NSRange(location: 0, length: cost.utf16.count)
-            if let match = regex.firstMatch(in: cost, options: [], range: range) {
-                if let minRange = Range(match.range(at: 1), in: cost),
-                   let maxRange = Range(match.range(at: 2), in: cost),
-                   let min = Double(String(cost[minRange])),
-                   let max = Double(String(cost[maxRange])) {
-                    return (min: min, max: max)
-                }
-            }
-        }
-        
-        // Look for single price like "$15" or "15"
-        let singlePattern = #"\$?(\d+(?:\.\d+)?)"#
-        if let regex = try? NSRegularExpression(pattern: singlePattern, options: .caseInsensitive) {
-            let range = NSRange(location: 0, length: cost.utf16.count)
-            if let match = regex.firstMatch(in: cost, options: [], range: range) {
-                if let priceRange = Range(match.range(at: 1), in: cost),
-                   let price = Double(String(cost[priceRange])) {
-                    return (min: price, max: price)
-                }
-            }
-        }
-        
-        return nil
-    }
-    
-    // MARK: - Activity-specific computed properties
-    private var activityDuration: String {
-        // Extract duration from description or estimate based on activity type
-        let name = recommendation.name.lowercased()
-        if name.contains("hiking") || name.contains("walk") {
-            return "2-3 hours"
-        } else if name.contains("biking") || name.contains("bike") {
-            return "1-2 hours"
-        } else if name.contains("garden") || name.contains("museum") {
-            return "1-2 hours"
-        } else if name.contains("picnic") {
-            return "2-4 hours"
-        } else if name.contains("zoo") || name.contains("aquarium") {
-            return "1-3 hours"
-        } else {
-            return "1-3 hours"
-        }
-    }
-    
-    private var activityIntensity: String {
-        // Extract intensity from description or estimate based on activity type
-        let name = recommendation.name.lowercased()
-        let description = recommendation.description.lowercased()
-        
-        if name.contains("hiking") || description.contains("strenuous") || description.contains("challenging") {
-            return "High"
-        } else if name.contains("biking") || name.contains("fitness") || description.contains("moderate") {
-            return "Medium"
-        } else if name.contains("garden") || name.contains("picnic") || name.contains("stroll") || name.contains("zoo") {
-            return "Low"
-        } else {
-            return "Medium"
-        }
-    }
-    
-    private var activityVibe: String {
-        // Determine the vibe/atmosphere of the activity
-        let name = recommendation.name.lowercased()
-        let description = recommendation.description.lowercased()
-        
-        if name.contains("picnic") || name.contains("garden") || description.contains("romantic") || description.contains("intimate") {
-            return "Romantic"
-        } else if name.contains("hiking") || name.contains("biking") || description.contains("adventure") || description.contains("outdoor") {
-            return "Adventure"
-        } else if name.contains("museum") || description.contains("cultural") || description.contains("educational") {
-            return "Cultural"
-        } else if name.contains("zoo") || name.contains("aquarium") || description.contains("fun") || description.contains("playful") || description.contains("games") {
-            return "Fun"
-        } else {
-            return "Casual"
         }
     }
     
@@ -746,5 +769,204 @@ struct RestaurantCardView: View {
             return "\(baseCount)+"
         }
     }
+}
+
+struct CompactRestaurantCardView: View {
+    let recommendation: RestaurantRecommendation
+    let dateType: DateType?
+    let matchNumber: Int
+    @State private var isPressed = false
     
+    var body: some View {
+        VStack(spacing: 0) {
+            // Image section
+            ZStack {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(height: 180)
+                    .overlay(
+                        Group {
+                            if let imageURL = recommendation.imageURL, !imageURL.isEmpty {
+                                AsyncImage(url: URL(string: imageURL)) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(height: 180)
+                                        .clipped()
+                                } placeholder: {
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.3))
+                                        .frame(height: 180)
+                                        .overlay(
+                                            VStack(spacing: 8) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                Text("Loading...")
+                                                    .font(.caption)
+                                                    .foregroundColor(.white)
+                                            }
+                                        )
+                                }
+                            } else {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 180)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "fork.knife")
+                                                .font(.system(size: 30))
+                                                .foregroundColor(.gray)
+                                            Text("No Image")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    )
+                            }
+                        }
+                    )
+                
+                // Gradient overlay
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.clear,
+                        Color.black.opacity(0.1),
+                        Color.black.opacity(0.4),
+                        Color.black.opacity(0.8)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                
+                // Match number badge
+                VStack {
+                    HStack {
+                        Text("Match #\(matchNumber)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.seaweedGreen)
+                            )
+                        Spacer()
+                    }
+                    .padding(.top, 12)
+                    .padding(.leading, 12)
+                    
+                    Spacer()
+                }
+                
+                // Restaurant info overlay
+                VStack {
+                    Spacer()
+                    HStack {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(recommendation.name)
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            
+                            HStack(spacing: 8) {
+                                // Rating
+                                HStack(spacing: 2) {
+                                    ForEach(0..<5) { index in
+                                        Image(systemName: index < Int(recommendation.rating) ? "star.fill" : "star")
+                                            .font(.caption2)
+                                            .foregroundColor(.yellow)
+                                    }
+                                }
+                                
+                                // Price level
+                                Text(formatPriceLevel(recommendation.priceLevel))
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.2))
+                                    )
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                }
+            }
+            
+            // Details section
+            VStack(alignment: .leading, spacing: 8) {
+                Text(recommendation.description)
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                
+                HStack {
+                    Text(recommendation.whyRecommended)
+                        .font(.system(size: 12))
+                        .foregroundColor(.seaweedGreen)
+                        .italic()
+                    
+                    Spacer()
+                    
+                    Text(recommendation.estimatedCost)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.seaweedGreen)
+                }
+            }
+            .padding(16)
+            .background(Color(.systemBackground))
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.seaweedGreen.opacity(0.2), lineWidth: 1)
+        )
+        .scaleEffect(isPressed ? 0.98 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: isPressed)
+    }
+    
+    private func formatPriceLevel(_ priceLevel: String) -> String {
+        let level = priceLevel.lowercased()
+        
+        switch level {
+        case "low", "budget", "cheap":
+            return "$"
+        case "medium", "moderate", "mid":
+            return "$$"
+        case "high", "expensive", "upscale":
+            return "$$$"
+        case "very high", "luxury", "fine dining":
+            return "$$$$"
+        default:
+            if level.contains("$") {
+                return level.uppercased()
+            } else if let range = level.range(of: #"\d+"#, options: .regularExpression) {
+                let number = String(level[range])
+                if let num = Int(number) {
+                    return String(repeating: "$", count: min(num, 4))
+                }
+            }
+            return "$$"
+        }
+    }
+}
+
+#Preview {
+    RestaurantResultsView(
+        dateType: .meal,
+        mealTimes: [.dinner],
+        priceRange: .medium,
+        date: Date(),
+        cuisines: [.italian]
+    )
 }

@@ -61,15 +61,18 @@ struct BackendPlaceRecommendation: Codable, Identifiable {
     let id = UUID()
     let name: String
     let description: String
-    let location: BackendLocation
+    let location: String
+    let address: String
+    let latitude: Double
+    let longitude: Double
     let category: String
     let estimatedCost: String
     let bestTime: String
     let whyRecommended: String
-    let aiConfidence: Double
+    let aiConfidence: Double?
     
     enum CodingKeys: String, CodingKey {
-        case name, description, location, category
+        case name, description, location, address, latitude, longitude, category
         case estimatedCost = "estimated_cost"
         case bestTime = "best_time"
         case whyRecommended = "why_recommended"
@@ -77,11 +80,7 @@ struct BackendPlaceRecommendation: Codable, Identifiable {
     }
     
     var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: location.lat, longitude: location.lon)
-    }
-    
-    var address: String {
-        location.displayName
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
     
     var cuisine: String {
@@ -93,7 +92,7 @@ struct BackendPlaceRecommendation: Codable, Identifiable {
     }
     
     var matchScore: Double {
-        aiConfidence
+        aiConfidence ?? 0.0
     }
 }
 
@@ -435,14 +434,30 @@ class BackendService: ObservableObject {
             queryParts.append(activityTypeNames)
         }
         
-        // Add activity intensity (for activity dates)
+        // Add activity intensity (for activity dates) - EXTREME CASES
         if let activityIntensity = activityIntensity {
-            queryParts.append(mapActivityIntensityToString(activityIntensity))
+            let intensityString = mapActivityIntensityToString(activityIntensity)
+            queryParts.append(intensityString)
+            
+            // Add specific keywords for extreme cases
+            if activityIntensity == .high {
+                queryParts.append("high intensity physical activity sports fitness")
+            } else if activityIntensity == .low {
+                queryParts.append("low intensity indoor sedentary")
+            }
         }
         
-        // Add price range
+        // Add price range - EXTREME CASES
         if let priceRange = priceRange {
-            queryParts.append(mapPriceRangeToString(priceRange))
+            let priceString = mapPriceRangeToString(priceRange)
+            queryParts.append(priceString)
+            
+            // Add specific keywords for extreme cases
+            if priceRange == .free {
+                queryParts.append("free no cost zero cost")
+            } else if priceRange == .luxury {
+                queryParts.append("expensive premium luxury high-end")
+            }
         }
         
         // Add date type
@@ -542,10 +557,10 @@ enum BackendError: Error, LocalizedError {
 extension BackendPlaceRecommendation {
     func toOSMPlace() -> OSMPlace {
         return OSMPlace(
-            id: location.placeId,
+            id: Int.random(in: 1...10000), // Generate random ID since we don't have placeId anymore
             name: name,
-            latitude: location.lat,
-            longitude: location.lon,
+            latitude: latitude,
+            longitude: longitude,
             amenity: mapCategoryToAmenity(category),
             cuisine: cuisine,
             website: nil, // Not available in current backend response

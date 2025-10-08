@@ -13,16 +13,17 @@ struct MealTimeSelectionView: View {
     let mealTimes: [MealTime] = [.breakfast, .lunch, .dinner, .notSure]
     
     var body: some View {
-        VStack(spacing: 30) {
-            VStack(spacing: 16) {
-                Text("What meal?")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Color.seaweedGreenGradient)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 40)
+        VStack(spacing: 0) {
+            // Compact title
+            Text("What meal?")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.seaweedGreenGradient)
+                .multilineTextAlignment(.center)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 2), spacing: 20) {
+            // Full-width grid layout
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
                 ForEach(mealTimes, id: \.self) { mealTime in
                     MealTimeOptionView(
                         mealTime: mealTime,
@@ -41,9 +42,9 @@ struct MealTimeSelectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 0)
             
-            Spacer()
+            Spacer(minLength: 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
@@ -59,24 +60,24 @@ struct MealTimeOptionView: View {
         Button(action: onTap) {
             VStack(spacing: 12) {
                 Image(systemName: mealTime.icon)
-                    .font(.system(size: 30))
+                    .font(.system(size: 32))
                     .foregroundColor(.primary)
                 
                 Text(mealTime.displayName)
-                    .font(.headline)
-                    .fontWeight(.medium)
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
             }
-            .frame(height: 120)
+            .frame(height: 100)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.white)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                    .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 3)
+                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())

@@ -104,16 +104,17 @@ def sanitize_address(address: str, location: str) -> str:
     # For other cases, add location context
     return f"{address}, {location}"
 
-def get_image_url(cuisine_type: str, name: str, location: str = "", latitude: float = None, longitude: float = None) -> str:
+def get_image_url(cuisine_type: str, name: str, location: str = "", latitude: float = None, longitude: float = None, address: str = "") -> str:
     """
-    Get enhanced image URL using Foursquare, Pexels, Unsplash, or fallback
+    Get enhanced image URL using Google Places API only
     """
     return image_service.get_restaurant_image_url(
         name=name,
         cuisine_type=cuisine_type,
         location=location,
         latitude=latitude,
-        longitude=longitude
+        longitude=longitude,
+        address=address
     )
 
 def reverse_geocode(latitude: float, longitude: float) -> str:
@@ -447,7 +448,7 @@ Return your response as a JSON array with this exact structure:
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "italian" or "mexican" or "american" or "japanese" or "chinese" or "indian" or "thai" or "french" or "mediterranean" or "sports" or "outdoor" or "indoor" or "entertainment" or "fitness",
-    "price_level": "free/low/medium/high/luxury",
+    "price_level": "free/low/medium/high/not_sure",
     "is_open": true/false,
     "open_hours": "Specific hours of operation",
     "rating": 4.5,
@@ -502,7 +503,7 @@ def create_meal_prompt(request: RestaurantRequest, actual_location: str, formatt
         "low": "budget-friendly (under $15 per person)",
         "medium": "moderate pricing ($15-30 per person)", 
         "high": "upscale ($30-60 per person)",
-        "luxury": "fine dining ($60+ per person)"
+        "not_sure": "any price range"
     }
     price_desc = price_descriptions.get(request.price_range, "any price range")
     
@@ -621,7 +622,7 @@ Return your response as a JSON array with this exact structure:
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "Specific cuisine type",
-    "price_level": "low/medium/high/luxury",
+    "price_level": "low/medium/high/not_sure",
     "is_open": true/false,
     "open_hours": "Specific hours of operation",
     "rating": 4.5,
@@ -660,7 +661,7 @@ def create_activity_prompt(request: RestaurantRequest, actual_location: str, for
         "low": "budget-friendly (under $20 per person)",
         "medium": "moderate pricing ($20-50 per person)", 
         "high": "upscale ($50-100 per person)",
-        "luxury": "premium ($100+ per person)"
+        "not_sure": "any price range"
     }
     price_desc = price_descriptions.get(request.price_range, "any price range")
     
@@ -781,7 +782,7 @@ Return your response as a JSON array with this exact structure:
     "latitude": 40.7128,
     "longitude": -74.0060,
     "cuisine_type": "Activity type (sports/outdoor/indoor/entertainment/fitness)",
-    "price_level": "free/low/medium/high/luxury",
+    "price_level": "free/low/medium/high/not_sure",
     "is_open": true/false,
     "open_hours": "Specific hours of operation",
     "rating": 4.5,
@@ -934,7 +935,8 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                             restaurant_data.get("name", ""),
                             request.location,
                             request.latitude,
-                            request.longitude
+                            request.longitude,
+                            sanitized_address
                         ),
                         website_url=restaurant_data.get("website_url"),
                         menu_url=restaurant_data.get("menu_url")
@@ -985,7 +987,7 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             why_recommended="Perfect for casual first dates with great coffee and comfortable seating",
             estimated_cost="$5-12 per person",
             best_time="2:00 PM",
-            image_url=get_image_url("american", "coffee shop", location, latitude, longitude)
+            image_url=get_image_url("american", "coffee shop", location, latitude, longitude, f"Downtown {location}")
         ),
         RestaurantRecommendation(
             name="Italian Bistro",
@@ -1002,7 +1004,7 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             why_recommended="Romantic atmosphere with excellent Italian cuisine perfect for dinner dates",
             estimated_cost="$20-35 per person",
             best_time="7:00 PM",
-            image_url=get_image_url("italian", "bistro", location, latitude, longitude)
+            image_url=get_image_url("italian", "bistro", location, latitude, longitude, f"Historic District, {location}")
         ),
         RestaurantRecommendation(
             name="Sushi Bar",
@@ -1019,7 +1021,7 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             why_recommended="Sophisticated dining experience perfect for special occasions",
             estimated_cost="$40-60 per person",
             best_time="8:00 PM",
-            image_url=get_image_url("japanese", "sushi", location, latitude, longitude)
+            image_url=get_image_url("japanese", "sushi", location, latitude, longitude, f"Waterfront District, {location}")
         ),
         # Activities (3)
         RestaurantRecommendation(
@@ -1037,7 +1039,7 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             why_recommended="Perfect for outdoor dates with beautiful scenery and free activities",
             estimated_cost="Free",
             best_time="4:00 PM",
-            image_url=get_image_url("outdoor", "park", location, latitude, longitude)
+            image_url=get_image_url("outdoor", "park", location, latitude, longitude, f"City Park, {location}")
         ),
         RestaurantRecommendation(
             name="Art Museum",
@@ -1054,7 +1056,7 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             why_recommended="Cultural experience perfect for intellectual dates and meaningful conversations",
             estimated_cost="$8-15 per person",
             best_time="2:00 PM",
-            image_url=get_image_url("entertainment", "museum", location, latitude, longitude)
+            image_url=get_image_url("entertainment", "museum", location, latitude, longitude, f"Arts District, {location}")
         ),
         RestaurantRecommendation(
             name="Escape Room",
@@ -1071,7 +1073,7 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
             why_recommended="Interactive experience perfect for couples who love puzzles and teamwork",
             estimated_cost="$25-35 per person",
             best_time="7:00 PM",
-            image_url=get_image_url("entertainment", "escape room", location, latitude, longitude)
+            image_url=get_image_url("entertainment", "escape room", location, latitude, longitude, f"Entertainment District, {location}")
         )
     ]
     

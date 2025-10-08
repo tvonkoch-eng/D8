@@ -280,4 +280,243 @@ class FirebaseService: ObservableObject {
             return "❌ Failed to retrieve user profile"
         }
     }
+    
+    // MARK: - Restaurant Details Management
+    
+    func saveRestaurantDetails(_ details: RestaurantDetails) async throws {
+        try await db.collection("restaurantDetails").document(details.restaurantId).setData(from: details)
+    }
+    
+    func getRestaurantDetails(for restaurantId: String) async throws -> RestaurantDetails? {
+        let document = try await db.collection("restaurantDetails").document(restaurantId).getDocument()
+        return try document.data(as: RestaurantDetails.self)
+    }
+    
+    func deleteRestaurantDetails(for restaurantId: String) async throws {
+        try await db.collection("restaurantDetails").document(restaurantId).delete()
+    }
+    
+    func cleanupOldRestaurantDetails() async throws {
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        
+        let query = db.collection("restaurantDetails")
+            .whereField("lastUpdated", isLessThan: cutoffDate)
+        
+        let snapshot = try await query.getDocuments()
+        
+        for document in snapshot.documents {
+            try await document.reference.delete()
+        }
+    }
+    
+    // MARK: - Restaurant Database Management
+    
+    func saveRestaurantDatabaseEntry(_ entry: RestaurantDatabaseEntry, restaurantId: String) async throws {
+        let entryWithId = RestaurantDatabaseEntry(
+            id: restaurantId,
+            name: entry.name,
+            description: entry.description,
+            location: entry.location,
+            address: entry.address,
+            latitude: entry.latitude,
+            longitude: entry.longitude,
+            cuisineType: entry.cuisineType,
+            priceLevel: entry.priceLevel,
+            rating: entry.rating,
+            whyRecommended: entry.whyRecommended,
+            estimatedCost: entry.estimatedCost,
+            bestTime: entry.bestTime,
+            duration: entry.duration,
+            isOpen: entry.isOpen,
+            openHours: entry.openHours,
+            imageURL: entry.imageURL,
+            websiteURL: entry.websiteURL,
+            menuURL: entry.menuURL,
+            viewCount: entry.viewCount,
+            lastViewed: entry.lastViewed,
+            createdAt: entry.createdAt,
+            lastUpdated: entry.lastUpdated,
+            enhancedDescription: entry.enhancedDescription,
+            operatingHours: entry.operatingHours,
+            additionalInfo: entry.additionalInfo,
+            hasEnhancedDetails: entry.hasEnhancedDetails
+        )
+        try await db.collection("restaurantDatabase").document(restaurantId).setData(from: entryWithId)
+    }
+    
+    func getRestaurantDatabaseEntry(for restaurantId: String) async throws -> RestaurantDatabaseEntry? {
+        let document = try await db.collection("restaurantDatabase").document(restaurantId).getDocument()
+        return try document.data(as: RestaurantDatabaseEntry.self)
+    }
+    
+    func restaurantDatabaseEntryExists(for restaurantId: String) async throws -> Bool {
+        let document = try await db.collection("restaurantDatabase").document(restaurantId).getDocument()
+        return document.exists
+    }
+    
+    func getRestaurantsByLocation(location: String, limit: Int = 50) async throws -> [RestaurantDatabaseEntry] {
+        let snapshot = try await db.collection("restaurantDatabase")
+            .whereField("location", isEqualTo: location)
+            .limit(to: limit)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: RestaurantDatabaseEntry.self)
+        }
+    }
+    
+    func getRestaurantsByCuisine(cuisine: String, limit: Int = 50) async throws -> [RestaurantDatabaseEntry] {
+        let snapshot = try await db.collection("restaurantDatabase")
+            .whereField("cuisineType", isEqualTo: cuisine)
+            .limit(to: limit)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: RestaurantDatabaseEntry.self)
+        }
+    }
+    
+    func searchRestaurants(query: String, limit: Int = 20) async throws -> [RestaurantDatabaseEntry] {
+        // Note: This is a simple implementation. For better search, consider using Algolia or similar
+        let snapshot = try await db.collection("restaurantDatabase")
+            .whereField("name", isGreaterThanOrEqualTo: query)
+            .whereField("name", isLessThan: query + "\u{f8ff}")
+            .limit(to: limit)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: RestaurantDatabaseEntry.self)
+        }
+    }
+    
+    func getPopularRestaurantsFromDatabase(limit: Int = 20) async throws -> [RestaurantDatabaseEntry] {
+        let snapshot = try await db.collection("restaurantDatabase")
+            .order(by: "viewCount", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: RestaurantDatabaseEntry.self)
+        }
+    }
+    
+    func incrementRestaurantViewCount(restaurantId: String) async throws {
+        let docRef = db.collection("restaurantDatabase").document(restaurantId)
+        
+        try await docRef.updateData([
+            "viewCount": FieldValue.increment(Int64(1)),
+            "lastViewed": FieldValue.serverTimestamp()
+        ])
+    }
+    
+    func updateRestaurantEnhancedDetails(
+        restaurantId: String,
+        enhancedDescription: String,
+        operatingHours: [String],
+        additionalInfo: String
+    ) async throws {
+        try await db.collection("restaurantDatabase").document(restaurantId).updateData([
+            "enhancedDescription": enhancedDescription,
+            "operatingHours": operatingHours,
+            "additionalInfo": additionalInfo,
+            "hasEnhancedDetails": true,
+            "lastUpdated": FieldValue.serverTimestamp()
+        ])
+    }
+    
+    func getRestaurantDatabaseStats() async throws -> RestaurantDatabaseStats {
+        let snapshot = try await db.collection("restaurantDatabase").getDocuments()
+        let restaurants = try snapshot.documents.compactMap { document in
+            try document.data(as: RestaurantDatabaseEntry.self)
+        }
+        
+        let totalRestaurants = restaurants.count
+        let restaurantsWithEnhancedDetails = restaurants.filter { $0.hasEnhancedDetails }.count
+        let totalViews = restaurants.reduce(0) { $0 + $1.viewCount }
+        let averageRating = restaurants.isEmpty ? 0.0 : restaurants.reduce(0.0) { $0 + $1.rating } / Double(restaurants.count)
+        
+        // Find most popular cuisine
+        let cuisineCounts = Dictionary(grouping: restaurants, by: { $0.cuisineType })
+            .mapValues { $0.count }
+        let mostPopularCuisine = cuisineCounts.max(by: { $0.value < $1.value })?.key ?? "Unknown"
+        
+        return RestaurantDatabaseStats(
+            totalRestaurants: totalRestaurants,
+            restaurantsWithEnhancedDetails: restaurantsWithEnhancedDetails,
+            totalViews: totalViews,
+            averageRating: averageRating,
+            mostPopularCuisine: mostPopularCuisine,
+            lastUpdated: Date()
+        )
+    }
+    
+    func cleanupOldRestaurantDatabaseEntries() async throws {
+        let cutoffDate = Calendar.current.date(byAdding: .month, value: -6, to: Date()) ?? Date()
+        
+        let query = db.collection("restaurantDatabase")
+            .whereField("lastViewed", isLessThan: cutoffDate)
+            .whereField("viewCount", isLessThan: 5) // Only clean up rarely viewed restaurants
+        
+        let snapshot = try await query.getDocuments()
+        
+        for document in snapshot.documents {
+            try await document.reference.delete()
+        }
+        
+        print("🧹 [FirebaseService] Cleaned up \(snapshot.documents.count) old restaurant database entries")
+    }
+    
+    // MARK: - Recommendation Storage
+    
+    func storeRecommendation(
+        name: String,
+        description: String,
+        category: String,
+        location: String,
+        latitude: Double,
+        longitude: Double,
+        estimatedCost: String,
+        bestTime: String,
+        whyRecommended: String,
+        dateType: DateType
+    ) {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            print("No authenticated user to store recommendation")
+            return
+        }
+        
+        let recommendation = [
+            "name": name,
+            "description": description,
+            "category": category,
+            "location": location,
+            "latitude": latitude,
+            "longitude": longitude,
+            "estimatedCost": estimatedCost,
+            "bestTime": bestTime,
+            "whyRecommended": whyRecommended,
+            "dateType": dateType.displayName,
+            "timestamp": Timestamp(date: Date()),
+            "userId": userId
+        ] as [String: Any]
+        
+        db.collection("recommendations").addDocument(data: recommendation) { error in
+            if let error = error {
+                print("Error storing recommendation: \(error)")
+            } else {
+                print("Successfully stored recommendation: \(name)")
+            }
+        }
+    }
+    
+    func getStoredRecommendations(userId: String, dateType: DateType? = nil) async throws -> [[String: Any]] {
+        var query = db.collection("recommendations").whereField("userId", isEqualTo: userId)
+        
+        if let dateType = dateType {
+            query = query.whereField("dateType", isEqualTo: dateType.displayName)
+        }
+        
+        let snapshot = try await query.getDocuments()
+        return snapshot.documents.map { $0.data() }
+    }
 }

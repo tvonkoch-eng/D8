@@ -134,16 +134,10 @@ struct CurvedTabBarShape: Shape {
             control: CGPoint(x: width, y: height)
         )
         
-        // Bottom edge
-        path.addLine(to: CGPoint(x: cornerRadius, y: height))
+        // Bottom edge - extend all the way to bottom
+        path.addLine(to: CGPoint(x: 0, y: height))
         
-        // Bottom left corner
-        path.addQuadCurve(
-            to: CGPoint(x: 0, y: height - cornerRadius),
-            control: CGPoint(x: 0, y: height)
-        )
-        
-        // Left edge
+        // Left edge - go straight up from bottom
         path.addLine(to: CGPoint(x: 0, y: cornerRadius))
         
         // Top left corner
@@ -163,48 +157,35 @@ struct CustomTabBar: View {
     
     var body: some View {
         HStack {
-            // Left tab - Explore (Safari icon)
+            Spacer()
+            
+            // Single centered tab - Explore (Safari icon)
             Button(action: {
                 selectedTab = 0
             }) {
-                VStack(spacing: 4) {
+                VStack(spacing: 1) {
                     Image(systemName: "safari")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundColor(selectedTab == 0 ? Color("Seaweed") : .gray)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(Color("Seaweed"))
                     
                     Text("Explore")
                         .font(.caption2)
-                        .foregroundColor(selectedTab == 0 ? Color("Seaweed") : .gray)
+                        .fontWeight(.medium)
+                        .foregroundColor(Color("Seaweed"))
                 }
             }
-            .frame(maxWidth: .infinity)
             
             Spacer()
-            
-            // Right tab - Calendar
-            Button(action: {
-                selectedTab = 2
-            }) {
-                VStack(spacing: 4) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundColor(selectedTab == 2 ? Color("Seaweed") : .gray)
-                    
-                    Text("Calendar")
-                        .font(.caption2)
-                        .foregroundColor(selectedTab == 2 ? Color("Seaweed") : .gray)
-                }
-            }
-            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, -35)
-        .padding(.vertical, 12)
+        .padding(.vertical, 1)
+        .padding(.top, 2)
         .background(
             CurvedTabBarShape()
                 .fill(.white)
-                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: -2)
+                .ignoresSafeArea(.all, edges: .bottom)
         )
-        .frame(height: 80)
     }
 }
 

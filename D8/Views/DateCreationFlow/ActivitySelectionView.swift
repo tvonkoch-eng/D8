@@ -15,23 +15,22 @@ struct ActivitySelectionView: View {
     let activityIntensities: [ActivityIntensity] = [.low, .medium, .high, .notSure]
     
     var body: some View {
-        VStack(spacing: 30) {
-            VStack(spacing: 16) {
-                Text("What activities?")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Color.seaweedGreenGradient)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 40)
+        VStack(spacing: 0) {
+            // Compact title
+            Text("What activities?")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.seaweedGreenGradient)
+                .multilineTextAlignment(.center)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
             
-            // Activity Types
+            // Activity Types - full-width grid
             VStack(alignment: .leading, spacing: 16) {
                 Text("Activity Types")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.primary)
                 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: 2), spacing: 15) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
                     ForEach(activityTypes, id: \.self) { activityType in
                         ActivityTypeOptionView(
                             activityType: activityType,
@@ -51,9 +50,9 @@ struct ActivitySelectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 0)
             
-            Spacer()
+            Spacer(minLength: 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
@@ -66,23 +65,22 @@ struct ActivityIntensitySelectionView: View {
     let activityIntensities: [ActivityIntensity] = [.low, .medium, .high, .notSure]
     
     var body: some View {
-        VStack(spacing: 30) {
-            VStack(spacing: 16) {
-                Text("Activity Intensity")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Color.seaweedGreenGradient)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 40)
+        VStack(spacing: 0) {
+            // Compact title
+            Text("Activity Intensity")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.seaweedGreenGradient)
+                .multilineTextAlignment(.center)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
             
-            // Activity Intensity
+            // Activity Intensity - full-width grid
             VStack(alignment: .leading, spacing: 16) {
                 Text("How intense?")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.primary)
                 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: 2), spacing: 15) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
                     ForEach(activityIntensities, id: \.self) { intensity in
                         ActivityIntensityOptionView(
                             intensity: intensity,
@@ -93,9 +91,9 @@ struct ActivityIntensitySelectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 0)
             
-            Spacer()
+            Spacer(minLength: 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
@@ -109,32 +107,26 @@ struct ActivityTypeOptionView: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 Image(systemName: activityType.icon)
-                    .font(.system(size: 30))
+                    .font(.system(size: 28))
                     .foregroundColor(.primary)
                 
                 Text(activityType.displayName)
-                    .font(.headline)
-                    .fontWeight(.medium)
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
-                
-                Text(activityType.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
             }
-            .frame(height: 120)
+            .frame(height: 80)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.white)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                    .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 3)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -148,32 +140,26 @@ struct ActivityIntensityOptionView: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 Image(systemName: intensity.icon)
-                    .font(.system(size: 30))
+                    .font(.system(size: 28))
                     .foregroundColor(.primary)
                 
                 Text(intensity.displayName)
-                    .font(.headline)
-                    .fontWeight(.medium)
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
-                
-                Text(intensity.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
             }
-            .frame(height: 120)
+            .frame(height: 80)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.white)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                    .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 3)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())

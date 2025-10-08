@@ -13,16 +13,17 @@ struct CuisineSelectionView: View {
     let cuisines: [Cuisine] = [.italian, .mexican, .american, .japanese, .chinese, .indian, .thai, .french, .mediterranean, .notSure]
     
     var body: some View {
-        VStack(spacing: 30) {
-            VStack(spacing: 16) {
-                Text("What cuisines?")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Color.seaweedGreenGradient)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 40)
+        VStack(spacing: 0) {
+            // Compact title
+            Text("What cuisines?")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.seaweedGreenGradient)
+                .multilineTextAlignment(.center)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 3), spacing: 20) {
+            // Full-width grid layout
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
                 ForEach(cuisines, id: \.self) { cuisine in
                     CuisineOptionView(
                         cuisine: cuisine,
@@ -41,9 +42,9 @@ struct CuisineSelectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 0)
             
-            Spacer()
+            Spacer(minLength: 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
@@ -57,24 +58,21 @@ struct CuisineOptionView: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 8) {
-                Text(cuisine.displayName)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(height: 100)
-            .frame(maxWidth: .infinity)
-            .background(
-                Rectangle()
-                    .fill(Color.white)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-            )
-            .overlay(
-                Rectangle()
-                    .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 3)
-            )
+            Text(cuisine.displayName)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.center)
+                .frame(height: 60)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white)
+                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(isSelected ? Color.seaweedGreen : Color.clear, lineWidth: 2)
+                )
         }
         .buttonStyle(PlainButtonStyle())
     }
