@@ -130,11 +130,15 @@ struct BackendDateResponse: Codable {
 class BackendService: ObservableObject {
     static let shared = BackendService()
     
-    // Railway production backend URL
-    private let baseURL = "https://dbbackend-production-2721.up.railway.app"
+    // Dynamic backend URL based on environment
+    private let baseURL: String
     private let session = URLSession.shared
     
-    private init() {}
+    private init() {
+        self.baseURL = BackendConfiguration.baseURL
+        print("🌐 BackendService initialized with \(BackendConfiguration.environmentName) environment")
+        print("📍 Base URL: \(baseURL)")
+    }
     
     // MARK: - Public Methods
     
