@@ -1,143 +1,38 @@
 # D8 - AI-Powered Date Planning App
 
-A complete iOS app with Python backend for intelligent date recommendations using AI and location services.
-
-## Project Structure
-
-```
-D8/
-├── D8/                          # iOS Swift/SwiftUI App
-│   ├── Models/                  # Data models
-│   ├── Services/                # Location and API services
-│   ├── Views/                   # SwiftUI views and components
-│   │   ├── DateCreationFlow/    # Date planning flow views
-│   │   └── Shared/              # Reusable UI components
-│   ├── Assets.xcassets/         # App assets and colors
-│   ├── ContentView.swift        # Main app view
-│   └── D8App.swift             # App entry point
-├── Backend/                     # Python FastAPI Backend
-│   ├── main.py                 # FastAPI application
-│   ├── requirements.txt        # Python dependencies
-│   ├── config.py               # Configuration settings
-│   └── test_backend.py         # Backend tests
-├── D8.xcodeproj/               # Xcode project file
-└── README.md                   # This file
-```
+D8 is an intelligent date planning application that helps couples discover perfect restaurants and activities for their dates.
 
 ## Features
 
-### iOS App (Swift/SwiftUI)
-- **Location Services**: GPS-based location detection and permission handling
-- **Date Planning Flow**: Multi-step wizard for creating date preferences
-- **Cuisine Selection**: Choose from various cuisine types
-- **Price Range Selection**: Set budget preferences
-- **Meal Time Selection**: Choose breakfast, lunch, dinner, or drinks
-- **Date Type Selection**: Casual, romantic, adventurous, etc.
-- **Results Display**: AI-filtered restaurant recommendations
+- 🍽️ **Restaurant Recommendations**: AI-powered restaurant suggestions based on preferences
+- 🎯 **Activity Suggestions**: Curated activities for memorable dates  
+- 📍 **Location-Based**: Recommendations tailored to your current location
+- 💰 **Budget-Friendly**: Filter by price range from free to luxury
+- 🎨 **Beautiful UI**: Modern, intuitive interface built with SwiftUI
 
-### Backend (Python/FastAPI)
-- **REST API**: FastAPI-based backend service
-- **AI Integration**: OpenAI GPT for intelligent recommendations
-- **OpenStreetMap Integration**: Location-based restaurant search
-- **Smart Filtering**: AI-powered recommendation scoring
-- **Location Services**: Coordinate-based search capabilities
+## Tech Stack
 
-## Setup Instructions
+- **Frontend**: SwiftUI (iOS)
+- **Backend**: Python FastAPI
+- **AI**: OpenAI GPT-3.5-turbo
+- **Database**: Firebase Firestore
+- **Deployment**: Railway (Backend)
 
-### iOS App Setup
+## Getting Started
 
-1. **Open in Xcode**:
-   ```bash
-   open D8.xcodeproj
-   ```
+1. Clone the repository
+2. Open `D8.xcodeproj` in Xcode
+3. Configure your API keys in the respective services
+4. Build and run on iOS Simulator or device
 
-2. **Configure Location Services**:
-   - Add location usage descriptions in Info.plist
-   - Ensure location permissions are properly configured
+## Backend Setup
 
-3. **Build and Run**:
-   - Select your target device or simulator
-   - Build and run the project (⌘+R)
-
-### Backend Setup
-
-1. **Navigate to Backend Directory**:
-   ```bash
-   cd D8/Backend
-   ```
-
-2. **Install Python Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set Environment Variables**:
-   ```bash
-   export OPENAI_API_KEY="your_openai_api_key_here"
-   ```
-
-4. **Run the Backend Server**:
-   ```bash
-   python main.py
-   ```
-   
-   The API will be available at `http://localhost:8000`
-
-### Development Workflow
-
-1. **Start Backend**: Run the Python backend server
-2. **Start iOS App**: Build and run in Xcode
-3. **Test Integration**: Use the app to create date preferences and see AI recommendations
-
-## API Endpoints
-
-- `GET /` - Health check
-- `GET /health` - Detailed health status
-- `POST /recommendations` - Get AI-powered date recommendations
-
-### Example API Request
-
-```json
-{
-  "location": "San Francisco, CA",
-  "date_type": "romantic",
-  "meal_times": ["dinner"],
-  "price_range": "high",
-  "cuisines": ["italian", "french"],
-  "date": "2024-02-14",
-  "latitude": 37.7749,
-  "longitude": -122.4194
-}
-```
-
-## Technologies Used
-
-### iOS App
-- **SwiftUI**: Modern declarative UI framework
-- **Core Location**: GPS and location services
-- **Combine**: Reactive programming framework
-- **URLSession**: HTTP networking
-
-### Backend
-- **FastAPI**: Modern Python web framework
-- **OpenAI API**: AI-powered recommendation filtering
-- **Pydantic**: Data validation and serialization
-- **Uvicorn**: ASGI server
-
-## Development Notes
-
-- The iOS app communicates with the backend via HTTP requests
-- Location permissions are required for the app to function
-- The backend uses mock data currently - replace with real OpenStreetMap API calls
-- AI recommendations are powered by OpenAI's GPT models
+The backend is deployed on Railway and handles:
+- Restaurant and activity recommendations
+- Image processing and optimization
+- Location-based filtering
+- User preference learning
 
 ## Contributing
 
-1. Make changes to the iOS app in the `D8/` directory
-2. Make changes to the backend in the `D8/Backend/` directory
-3. Test both components together
-4. Ensure the API contract between frontend and backend remains consistent
-
-## License
-
-This project is for educational and development purposes.
+Feel free to submit issues and enhancement requests!
