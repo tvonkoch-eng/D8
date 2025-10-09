@@ -8,22 +8,14 @@ import json
 import requests
 import random
 import re
+import time
 from image_service import image_service
 
-# Environment configuration
-ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-DEBUG_MODE = ENVIRONMENT == "development"
-
-app = FastAPI(
-    title="D8 Backend API", 
-    version="2.0.1",
-    debug=DEBUG_MODE
-)
+app = FastAPI(title="D8 Backend API", version="2.0.1")
 
 # Configure OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if openai_api_key:
-    openai.api_key = openai_api_key
     print(f"OpenAI API key loaded from environment (length: {len(openai_api_key)})")
     print("OpenAI API key is configured")
 else:
@@ -130,12 +122,19 @@ def reverse_geocode(latitude: float, longitude: float) -> str:
     Convert coordinates to a location name using OpenStreetMap Nominatim API
     """
     try:
+        geocode_start = time.time()
+        print(f"🌍 [Geocode] Starting reverse geocoding for ({latitude}, {longitude}) at {datetime.now()}")
+        
         url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}&zoom=10&addressdetails=1"
         headers = {
             'User-Agent': 'D8-Restaurant-App/1.0'
         }
         
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)  # No timeout limit
+        
+        geocode_end = time.time()
+        geocode_duration = geocode_end - geocode_start
+        print(f"🌍 [Geocode] Reverse geocoding completed in {geocode_duration:.2f}s")
         if response.status_code == 200:
             data = response.json()
             address = data.get('address', {})
@@ -163,13 +162,7 @@ def reverse_geocode(latitude: float, longitude: float) -> str:
 
 @app.get("/")
 def root():
-    environment_info = f"Environment: {ENVIRONMENT}" if DEBUG_MODE else ""
-    return {
-        "message": f"D8 Backend API v2.1 - OpenAI Powered with Explore",
-        "environment": ENVIRONMENT,
-        "debug_mode": DEBUG_MODE,
-        "timestamp": datetime.now().isoformat()
-    }
+    return {"message": "D8 Backend API v2.1 - OpenAI Powered with Explore"}
 
 @app.get("/health")
 def health_check():
@@ -511,6 +504,8 @@ def create_meal_prompt(request: RestaurantRequest, actual_location: str, formatt
     
     # Format cuisines
     cuisines_str = ", ".join(request.cuisines) if request.cuisines else "any cuisine"
+    print(f"🍽️ [Cuisine] Requested cuisines: {request.cuisines}")
+    print(f"🍽️ [Cuisine] Formatted cuisines: {cuisines_str}")
     
     # Format price range
     price_descriptions = {
@@ -621,7 +616,8 @@ SPECIFIC INSTRUCTIONS:
 - Prioritize restaurants with consistent quality and good reputations
 - Include a mix of well-known spots and hidden gems
 - Consider the specific meal time (breakfast = casual, lunch = business-friendly, dinner = romantic)
-- Ensure variety in cuisine types while respecting preferences
+- **CRITICAL: ONLY recommend restaurants that serve {cuisines_str} cuisine. Do NOT recommend Chinese, Thai, or other cuisines if Indian was requested.**
+- **CRITICAL: If no {cuisines_str} restaurants are available in the immediate area, expand search to within 15 miles to find proper matches.**
 - Include restaurants that locals would recommend to friends
 
 For each restaurant, provide detailed, specific information that helps the user make an informed decision.
@@ -820,16 +816,21 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
     """
     try:
         print(f"Creating OpenAI client with API key: {'configured' if openai_api_key else 'None'}...")
-        # Use the older OpenAI client initialization for compatibility
-        openai.api_key = openai_api_key
+        
+        # Initialize OpenAI client with new API format
+        client = openai.OpenAI(api_key=openai_api_key)
         
         print("Making OpenAI API call...")
         system_message = """You are an expert restaurant recommendation specialist with extensive knowledge of dining scenes across major cities. You understand what makes restaurants perfect for dates, considering atmosphere, food quality, service, and romantic appeal. Always respond with valid JSON arrays containing detailed restaurant recommendations. Be specific about real, well-known restaurants and their actual details. Focus on establishments that locals would genuinely recommend to friends for special occasions."""
         if request.date_type == "activity":
             system_message = """You are an expert activity recommendation specialist with extensive knowledge of entertainment, recreation, and date-worthy activities across major cities. You understand what makes activities perfect for dates, considering engagement, conversation opportunities, and shared experiences. Always respond with valid JSON arrays containing detailed activity recommendations. Be specific about real, well-known venues and activities and their actual details. Focus on experiences that locals would genuinely recommend to friends for special occasions."""
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        # Use faster, cheaper model
+        openai_start = time.time()
+        print(f"🤖 [OpenAI] Starting API call with gpt-3.5-turbo-16k at {datetime.now()}")
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo-16k",  # Faster and cheaper than regular turbo
             messages=[
                 {
                     "role": "system", 
@@ -837,14 +838,20 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                 },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=2000,  # Reduced from 3000 to 2000 for faster processing
+            max_tokens=1000,  # Reduced for faster processing
             temperature=0.7
         )
+        
+        openai_end = time.time()
+        openai_duration = openai_end - openai_start
+        print(f"🤖 [OpenAI] API call completed in {openai_duration:.2f}s")
         print("OpenAI API call successful!")
         
         # Parse the AI response
+        parse_start = time.time()
         ai_response = response.choices[0].message.content.strip()
-        print(f"OpenAI response: {ai_response[:200]}...")
+        print(f"📝 [Parse] OpenAI response length: {len(ai_response)} chars")
+        print(f"📝 [Parse] Starting JSON extraction at {datetime.now()}")
         
         # Extract JSON from the response - handle both ```json and plain JSON
         import re
@@ -914,7 +921,13 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                 else:
                     raise Exception("No valid JSON found in OpenAI response")
         
+        parse_end = time.time()
+        parse_duration = parse_end - parse_start
+        print(f"📝 [Parse] JSON extraction completed in {parse_duration:.2f}s")
+        
         # Convert to our model
+        convert_start = time.time()
+        print(f"🔄 [Convert] Starting recommendation conversion at {datetime.now()}")
         recommendations = []
         
         # If we couldn't parse any data, create fallback recommendations
@@ -922,12 +935,26 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
             print("No valid data parsed, creating fallback recommendations")
             recommendations = create_fallback_recommendations(actual_location, request.latitude, request.longitude)
         else:
-            for restaurant_data in restaurants_data:
+            print(f"🔄 [Convert] Processing {len(restaurants_data)} parsed recommendations")
+            for i, restaurant_data in enumerate(restaurants_data):
                 try:
                     # Sanitize the address
                     raw_address = restaurant_data.get("address", "")
                     sanitized_address = sanitize_address(raw_address, request.location)
                     print(f"Address sanitization: '{raw_address}' -> '{sanitized_address}'")
+                    
+                    # Generate image URL with timing
+                    image_start = time.time()
+                    image_url = get_image_url(
+                        restaurant_data.get("cuisine_type", ""), 
+                        restaurant_data.get("name", ""),
+                        request.location,
+                        request.latitude,
+                        request.longitude,
+                        sanitized_address
+                    )
+                    image_end = time.time()
+                    print(f"🖼️ [Image] Generated image URL for '{restaurant_data.get('name', '')}' in {image_end - image_start:.2f}s")
                     
                     recommendation = RestaurantRecommendation(
                         name=restaurant_data.get("name", "Unknown Restaurant"),
@@ -944,14 +971,7 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                         why_recommended=restaurant_data.get("why_recommended", ""),
                         estimated_cost=restaurant_data.get("estimated_cost", ""),
                         best_time=restaurant_data.get("best_time", ""),
-                        image_url=get_image_url(
-                            restaurant_data.get("cuisine_type", ""), 
-                            restaurant_data.get("name", ""),
-                            request.location,
-                            request.latitude,
-                            request.longitude,
-                            sanitized_address
-                        ),
+                        image_url=image_url,
                         website_url=restaurant_data.get("website_url"),
                         menu_url=restaurant_data.get("menu_url")
                     )
@@ -959,6 +979,11 @@ async def get_openai_recommendations(prompt: str, request: RestaurantRequest) ->
                 except Exception as e:
                     print(f"Error parsing restaurant data: {e}")
                     continue
+        
+        convert_end = time.time()
+        convert_duration = convert_end - convert_start
+        print(f"🔄 [Convert] Recommendation conversion completed in {convert_duration:.2f}s")
+        print(f"🎯 [Total] Generated {len(recommendations)} recommendations")
         
         return recommendations
         
