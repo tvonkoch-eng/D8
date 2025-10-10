@@ -9,9 +9,34 @@ import requests
 import random
 import re
 import time
+import math
 from image_service import image_service
 
 app = FastAPI(title="D8 Backend API", version="2.0.1")
+
+# Location precision settings for consistent results
+LOCATION_PRECISION_RADIUS = 2.0  # 2 miles radius for localized results
+
+def round_coordinates(latitude: float, longitude: float) -> tuple:
+    """
+    Round coordinates to create consistent location zones (~2 mile radius)
+    This ensures users in the same general area see the same results
+    """
+    # Convert radius from miles to degrees (approximate)
+    # 1 degree latitude ≈ 69 miles
+    # 1 degree longitude varies by latitude, but we'll use a conservative estimate
+    latitude_degree_radius = LOCATION_PRECISION_RADIUS / 69.0
+    longitude_degree_radius = LOCATION_PRECISION_RADIUS / (69.0 * math.cos(latitude * math.pi / 180.0))
+    
+    # Round to the nearest "zone"
+    rounded_latitude = round(latitude / latitude_degree_radius) * latitude_degree_radius
+    rounded_longitude = round(longitude / longitude_degree_radius) * longitude_degree_radius
+    
+    print(f"📍 [Backend] Original: {latitude}, {longitude}")
+    print(f"📍 [Backend] Rounded: {rounded_latitude}, {rounded_longitude}")
+    print(f"📍 [Backend] Zone radius: {LOCATION_PRECISION_RADIUS} miles")
+    
+    return (rounded_latitude, rounded_longitude)
 
 # Configure OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -353,11 +378,13 @@ def create_explore_prompt(request: RestaurantRequest) -> str:
     except:
         formatted_date = request.date
     
-    # Get actual location name from coordinates
+    # Get actual location name from coordinates with precision rounding
     actual_location = request.location
     if request.latitude and request.longitude and request.location == "Current Location":
-        actual_location = reverse_geocode(request.latitude, request.longitude)
-        print(f"Converted coordinates ({request.latitude}, {request.longitude}) to location: {actual_location}")
+        # Round coordinates to create consistent location zones
+        rounded_lat, rounded_lon = round_coordinates(request.latitude, request.longitude)
+        actual_location = reverse_geocode(rounded_lat, rounded_lon)
+        print(f"Converted rounded coordinates ({rounded_lat}, {rounded_lon}) to location: {actual_location}")
     
     # Get day of week for context
     try:
@@ -484,11 +511,13 @@ def create_restaurant_prompt(request: RestaurantRequest) -> str:
     except:
         formatted_date = request.date
     
-    # Get actual location name from coordinates
+    # Get actual location name from coordinates with precision rounding
     actual_location = request.location
     if request.latitude and request.longitude and request.location == "Current Location":
-        actual_location = reverse_geocode(request.latitude, request.longitude)
-        print(f"Converted coordinates ({request.latitude}, {request.longitude}) to location: {actual_location}")
+        # Round coordinates to create consistent location zones
+        rounded_lat, rounded_lon = round_coordinates(request.latitude, request.longitude)
+        actual_location = reverse_geocode(rounded_lat, rounded_lon)
+        print(f"Converted rounded coordinates ({rounded_lat}, {rounded_lon}) to location: {actual_location}")
     
     if request.date_type == "activity":
         return create_activity_prompt(request, actual_location, formatted_date)
@@ -1004,10 +1033,14 @@ def create_fallback_recommendations(location: str, latitude: float = None, longi
     """
     Create fallback recommendations when OpenAI parsing fails
     """
-    # Get coordinates for the location (simplified)
+    # Get coordinates for the location with precision rounding
     if latitude is None or longitude is None:
         coords = get_location_coordinates(location)
         latitude, longitude = coords
+    
+    # Round coordinates to create consistent location zones
+    if latitude is not None and longitude is not None:
+        latitude, longitude = round_coordinates(latitude, longitude)
     
     recommendations = [
         # Restaurants (3)
